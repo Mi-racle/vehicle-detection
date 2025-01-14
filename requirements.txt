@@ -1,2 +1,4 @@
 opencv-python
+tensorrt-cu11
 ultralytics
+pyyaml

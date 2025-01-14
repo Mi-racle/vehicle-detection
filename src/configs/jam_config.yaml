@@ -1,0 +1,2 @@
+threshold: 30
+cls_indices: [2, 3, 5, 7]
