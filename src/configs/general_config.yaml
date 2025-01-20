@@ -1,6 +1,0 @@
-source: ../resources/traffic.mp4
-device: 0
-
-det_jam: true
-det_motor_into_pavement: true
-det_volume: true
