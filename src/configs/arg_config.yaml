@@ -8,22 +8,35 @@ general_args: {
 #    left_x: none,
 #    right_x: 2800
 #  },
-  source: ../resources/traffic2.mp4,
+
+#  source: ../resources/traffic2.mp4,
+#  crop: {
+#    top_y: none,
+#    bottom_y: none,
+#    left_x: none,
+#    right_x: none
+#  },
+
+  source: ../resources/pedestrians.mp4,
   crop: {
     top_y: none,
     bottom_y: none,
     left_x: none,
     right_x: none
   },
+
+  pre_trained: yolo11s.pt,
   device: 0,  #  cpu or 0, 1, 2, 3...
 
   det_jam: false,
   det_mip: false,  # Motor Into Pavement
-  det_size: true,
+  det_size: false,
   det_queue: false,
   det_density: false,
-  det_volume: true,
-  det_speed: true
+  det_volume: false,
+  det_speed: false,
+  det_polume: false,  # Pedestrian volume
+  det_pim: true,  # Pedestrian Into Motor
 }
 jam_args: {
   n_threshold: 30,
@@ -58,4 +71,22 @@ speed_args: {
   lengths_m: [ 60, 20, 60, 20 ],
   angle: 90,
   grain_size_second: 0.4
+}
+polume_args: {
+  cls_indices: [ 0, 3 ],
+  iou_threshold: 0.6
+}
+pim_args: {
+  cls_indices: [ 0, 3 ],
+  vertices: [ [ 0, 144 ], [ 0, 663 ], [ 1920, 1049 ], [ 1920, 406 ] ],
+  iou_threshold: 0.6
+}
+plate_args: {
+  det_model_dir: weights/ch_PP-OCRv4_det,
+  rec_model_dir: weights/ch_PP-OCRv4_rec,
+  cls_model_dir: weights/ch_ppocr_mobile_slim_v2.0_cls,
+  use_angle_cls: false,
+  lang: ch,
+  show_log: false,
+  use_gpu: true
 }

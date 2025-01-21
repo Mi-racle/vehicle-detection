@@ -1,8 +1,8 @@
 numpy
 opencv-python
-shapely
-tensorrt-cu11
-ultralytics
 pillow
 pyyaml
 sympy
+shapely
+tensorrt-cu11
+ultralytics

@@ -1,10 +1,8 @@
 import cv2
-import numpy as np
 from ultralytics import YOLO
 
-from config import GENERAL_CONFIG, QUEUE_CONFIG, JAM_CONFIG, DENSITY_CONFIG, VOLUME_CONFIG, SPEED_CONFIG, MIP_CONFIG, \
-    SIZE_CONFIG
-from detect import detect_jam, detect_queue, detect_density, VolumeDetector, SpeedDetector, detect_size
+from config import *
+from detect import *
 
 
 def run():
@@ -14,13 +12,14 @@ def run():
     crop_left_x = None if crop_size['left_x'] == 'none' else int(crop_size['left_x'])
     crop_right_x = None if crop_size['right_x'] == 'none' else int(crop_size['right_x'])
 
-    vehicle_det_model = YOLO('yolo11s.pt')
+    vehicle_det_model = YOLO(GENERAL_CONFIG['pre_trained'])
     cap_out = None
     cap_in = cv2.VideoCapture(GENERAL_CONFIG['source'])
     fps = cap_in.get(cv2.CAP_PROP_FPS)
 
     volume_detector = VolumeDetector(**VOLUME_CONFIG) if GENERAL_CONFIG['det_volume'] else None
     speed_detector = SpeedDetector(fps=fps, **SPEED_CONFIG) if GENERAL_CONFIG['det_speed'] else None
+    polume_detector = PolumeDetector(**POLUME_CONFIG) if GENERAL_CONFIG['det_polume'] else None
 
     while cap_in.isOpened():
         ret, frame = cap_in.read()
@@ -40,7 +39,8 @@ def run():
             save=False,
             agnostic_nms=True,
             persist=True,
-            device=0
+            device=0,
+            classes=[0, 3]
         )[0].cpu().numpy()
         img = result.plot(conf=False, line_width=1)
 
@@ -50,6 +50,7 @@ def run():
             cv2.putText(img, f'Jam: {ret_jam}', (0, 30 * n_line), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255))
 
         if GENERAL_CONFIG['det_size']:
+            # TODO
             ret_size = detect_size(result, **SIZE_CONFIG)
             cv2.line(img, SIZE_CONFIG['vertices'][0], SIZE_CONFIG['vertices'][1], (255, 255, 0), thickness=2)
 
@@ -77,6 +78,22 @@ def run():
             for idx in ret_speed:
                 retrieve = np.where(result.boxes.id == idx)[0][0]
                 cv2.putText(img, f'{ret_speed[idx]:.3f} km/h', (int(result.boxes.xyxy[retrieve][2]), int(result.boxes.xyxy[retrieve][3])), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0))
+
+        if GENERAL_CONFIG['det_polume']:
+            n_line += 1
+            ret_polume = polume_detector.update(result)
+            # cv2.polylines(img, np.array([POLUME_CONFIG['vertices']]), isClosed=True, color=(0, 100, 255), thickness=2)
+            cv2.putText(img, f'Pedestrian volume: {ret_polume}', (0, 30 * n_line), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 100, 255))
+
+        if GENERAL_CONFIG['det_pim']:
+            ret_pim = detect_pim(result, **PIM_CONFIG)
+            # cv2.polylines(img, np.array([PIM_CONFIG['vertices']]), isClosed=True, color=(0, 200, 0), thickness=2)
+            for idx in ret_pim:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                tl = (int(result.boxes.xyxy[retrieve][0]), int(result.boxes.xyxy[retrieve][1]))
+                br = (int(result.boxes.xyxy[retrieve][2]), int(result.boxes.xyxy[retrieve][3]))
+                color = (0, 0, 200) if ret_pim[idx] else (0, 200, 0)
+                cv2.rectangle(img, tl, br, color=color, thickness=2)
 
         # cv2.imwrite('re.png', img)
         # break

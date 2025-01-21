@@ -7,7 +7,8 @@ from shapely.geometry.point import Point
 from shapely.geometry.polygon import Polygon
 from ultralytics.engine.results import Results
 
-from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, VehicleSize
+from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, VehicleSize, \
+    is_between, is_walking, cal_int_ratio
 
 
 def detect_jam(result: Results, cls_indices: list, n_threshold: int) -> bool:
@@ -156,6 +157,9 @@ class SpeedDetector:
             speed = 0
 
             for j, buf in enumerate(self._buffer):
+                if not buf.boxes.id:
+                    continue
+
                 retrieve = np.where(buf.boxes.id == idx)[0]
 
                 if retrieve.shape[0] >= 1:
@@ -174,3 +178,58 @@ class SpeedDetector:
         self._buffer.append(result)
 
         return ret
+
+
+class PolumeDetector:
+    def __init__(self, cls_indices: list, iou_threshold: float):
+        self._id_set = set()
+        self._cls_indices = cls_indices
+        self._iou_threshold = iou_threshold
+
+    def update(self, result: Results) -> int:
+        vehicle_retrieves = np.where(result.boxes.cls == self._cls_indices[1])[0]
+
+        for i, xyxy in enumerate(result.boxes.xyxy):
+            if result.boxes.cls[i] not in self._cls_indices[0:]:
+                continue
+
+            walking = True
+
+            for retrieve in vehicle_retrieves:
+                iou = cal_int_ratio(xyxy, result.boxes.xyxy[retrieve])
+
+                if iou > self._iou_threshold:
+                    walking = False
+                    break
+
+            if walking:
+                self._id_set.add(result.boxes.id[i])
+
+        return len(self._id_set)
+
+
+def detect_pim(result: Results, cls_indices: list, vertices: list, iou_threshold=0.6) -> dict[int, bool]:
+    ret = {}
+
+    vehicle_retrieves = np.where(result.boxes.cls == cls_indices[1])[0]
+
+    for i, xyxy in enumerate(result.boxes.xyxy):
+        if result.boxes.cls[i] not in cls_indices[0:]:
+            continue
+
+        walking = True
+
+        for retrieve in vehicle_retrieves:
+            iou = cal_int_ratio(xyxy, result.boxes.xyxy[retrieve])
+
+            if iou > iou_threshold:
+                walking = False
+                break
+
+        if walking:
+            upper = LineString([vertices[0], vertices[3]])
+            lower = LineString([vertices[1], vertices[2]])
+            line = LineString([(xyxy[0], xyxy[3]), (xyxy[2], xyxy[3])])
+            ret[result.boxes.id[i]] = not (line.intersects(lower) or is_between(line, lower, upper))
+
+    return ret

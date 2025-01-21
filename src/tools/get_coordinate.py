@@ -11,7 +11,7 @@ def on_click(event):
 root = tk.Tk()
 root.title("图片点击坐标获取")
 
-image_path = 'D:/xxs-signs/vehicle-detection/resources/image2.png'
+image_path = 'D:/xxs-signs/vehicle-detection/resources/image.png'
 image = Image.open(image_path)
 # image = image.crop(box=(0, 250, 2800, 2160))
 photo = ImageTk.PhotoImage(image)
