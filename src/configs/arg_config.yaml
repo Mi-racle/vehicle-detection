@@ -9,21 +9,21 @@ general_args: {
 #    right_x: 2800
 #  },
 
-#  source: ../resources/traffic2.mp4,
-#  crop: {
-#    top_y: none,
-#    bottom_y: none,
-#    left_x: none,
-#    right_x: none
-#  },
-
-  source: ../resources/pedestrians.mp4,
+  source: ../resources/traffic2.mp4,
   crop: {
     top_y: none,
     bottom_y: none,
     left_x: none,
     right_x: none
   },
+
+#  source: ../resources/pedestrians.mp4,
+#  crop: {
+#    top_y: none,
+#    bottom_y: none,
+#    left_x: none,
+#    right_x: none
+#  },
 
   pre_trained: yolo11s.pt,
   device: 0,  #  cpu or 0, 1, 2, 3...
@@ -33,10 +33,11 @@ general_args: {
   det_size: false,
   det_queue: false,
   det_density: false,
+  clas_color: true,
   det_volume: false,
   det_speed: false,
   det_polume: false,  # Pedestrian volume
-  det_pim: true,  # Pedestrian Into Motor
+  det_pim: false,  # Pedestrian Into Motor
 }
 jam_args: {
   n_threshold: 30,
@@ -60,6 +61,10 @@ density_args: {
   cls_indices: [ 2, 3, 5, 7 ],
   vertices: [ [ 1171, 0 ], [ 434, 290 ], [ 596, 290 ], [ 1231, 0 ] ],
   length_m: 100
+}
+color_args: {
+  cls_indices: [ 2, 3, 5, 7 ],
+  vertices: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
 }
 volume_args: {
   cls_indices: [ 2, 3, 5, 7 ],

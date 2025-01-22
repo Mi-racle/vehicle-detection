@@ -1,14 +1,21 @@
 import math
 from collections import deque
+from typing import Any
 
+import cv2
 import numpy as np
+import torch
+import yaml
+from PIL import Image
 from shapely.geometry.linestring import LineString
 from shapely.geometry.point import Point
 from shapely.geometry.polygon import Polygon
+from torch import nn
+from torchvision import models, transforms
 from ultralytics.engine.results import Results
 
 from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, VehicleSize, \
-    is_between, is_walking, cal_int_ratio
+    is_between, cal_intersection_ratio
 
 
 def detect_jam(result: Results, cls_indices: list, n_threshold: int) -> bool:
@@ -99,6 +106,49 @@ def detect_density(result: Results, cls_indices: list, vertices: list, int_thres
         return count / length_m * 1e3
 
 
+class ColorClassifier:
+    def __init__(self, cls_indices: list, vertices: list, weights='weights/resnet50.pth', cls_path='configs/color.yaml'):
+        self._cls_indices = cls_indices
+        self._polygon = Polygon(vertices)
+        self._idx2cls: dict = yaml.safe_load(open(cls_path, 'r'))
+        self._model = models.resnet50()
+        self._model.fc = nn.Linear(self._model.fc.in_features, len(self._idx2cls))
+        self._model.load_state_dict(torch.load(weights))
+        self._transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+    def classify(self, result: Results, img: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray) -> dict[int, str]:
+        if result.boxes.id is None:
+            return {}
+
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        idxes = []
+        box_imgs = []
+        for i, idx in enumerate(result.boxes.id):
+            centre = Point((result.boxes.xywh[i][0], result.boxes.xywh[i][1]))
+            if result.boxes.cls[i] not in self._cls_indices or not self._polygon.contains(centre):
+                continue
+
+            xyxy = result.boxes.xyxy[i]
+            x1, y1, x2, y2 = int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])
+            box_img = img[y1: y2, x1: x2, :]
+            box_img = self._transform(Image.fromarray(box_img))
+
+            idxes.append(idx)
+            box_imgs.append(box_img)
+
+        box_imgs = torch.stack(box_imgs)
+
+        output = self._model(box_imgs)
+        _, preds = torch.max(output, 1)
+
+        return {idxes[_]: self._idx2cls[int(label)] for _, label in enumerate(preds.tolist())}
+
+
 class VolumeDetector:
     def __init__(self, cls_indices: list, vertices: list):
         self._id_set = set()
@@ -111,7 +161,6 @@ class VolumeDetector:
                 continue
 
             centre = Point((xywh[0], xywh[1]))
-
             if self._polygon.contains(centre):
                 self._id_set.add(result.boxes.id[i])
 
@@ -144,6 +193,9 @@ class SpeedDetector:
         self._homography_matrix = cal_homography_matrix(vertices, [rv0, rv1, rv2, rv3])
 
     def update(self, result: Results) -> dict[int, float]:
+        if result.boxes.id is None:
+            return {}
+
         if len(self._buffer) == 0:
             self._buffer.append(result)
             return {idx: 0 for idx in result.boxes.id}
@@ -196,7 +248,7 @@ class PolumeDetector:
             walking = True
 
             for retrieve in vehicle_retrieves:
-                iou = cal_int_ratio(xyxy, result.boxes.xyxy[retrieve])
+                iou = cal_intersection_ratio(xyxy, result.boxes.xyxy[retrieve])
 
                 if iou > self._iou_threshold:
                     walking = False
@@ -220,7 +272,7 @@ def detect_pim(result: Results, cls_indices: list, vertices: list, iou_threshold
         walking = True
 
         for retrieve in vehicle_retrieves:
-            iou = cal_int_ratio(xyxy, result.boxes.xyxy[retrieve])
+            iou = cal_intersection_ratio(xyxy, result.boxes.xyxy[retrieve])
 
             if iou > iou_threshold:
                 walking = False

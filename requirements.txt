@@ -2,7 +2,10 @@ numpy
 opencv-python
 pillow
 pyyaml
+scikit-learn
 sympy
 shapely
 tensorrt-cu11
+torch == 2.5.1+cu118
+torchvision == 0.20.1+cu118
 ultralytics

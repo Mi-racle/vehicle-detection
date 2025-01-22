@@ -20,10 +20,10 @@ def run():
     volume_detector = VolumeDetector(**VOLUME_CONFIG) if GENERAL_CONFIG['det_volume'] else None
     speed_detector = SpeedDetector(fps=fps, **SPEED_CONFIG) if GENERAL_CONFIG['det_speed'] else None
     polume_detector = PolumeDetector(**POLUME_CONFIG) if GENERAL_CONFIG['det_polume'] else None
+    color_classifier = ColorClassifier(**COLOR_CONFIG) if GENERAL_CONFIG['clas_color'] else None
 
     while cap_in.isOpened():
         ret, frame = cap_in.read()
-
         if not ret:
             break
 
@@ -40,7 +40,6 @@ def run():
             agnostic_nms=True,
             persist=True,
             device=0,
-            classes=[0, 3]
         )[0].cpu().numpy()
         img = result.plot(conf=False, line_width=1)
 
@@ -65,6 +64,13 @@ def run():
             ret_density = detect_density(result, **DENSITY_CONFIG)
             cv2.polylines(img, np.array([DENSITY_CONFIG['vertices']]), isClosed=True, color=(0, 255, 255), thickness=2)
             cv2.putText(img, f'Density: {ret_density:.2f} cars per km', (0, 30 * n_line), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255))
+
+        if GENERAL_CONFIG['clas_color']:
+            ret_color = color_classifier.classify(result, frame)
+            cv2.polylines(img, np.array([COLOR_CONFIG['vertices']]), isClosed=True, color=(255, 0, 0), thickness=2)
+            for idx in ret_color:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                cv2.putText(img, f'{ret_color[idx]}', (int(result.boxes.xyxy[retrieve][2]), int(result.boxes.xyxy[retrieve][3])), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0))
 
         if GENERAL_CONFIG['det_volume']:
             n_line += 1
