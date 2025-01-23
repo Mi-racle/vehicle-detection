@@ -179,7 +179,7 @@ class ColorClassifier:
             idxes.append(idx)
             box_imgs.append(box_img)
 
-        preds = self._model(torch.stack(box_imgs), verbose=False, device=0) if box_imgs else {}
+        preds = self._model.predict(torch.stack(box_imgs), verbose=False, device=0) if box_imgs else {}
 
         for i, pred in enumerate(preds):
             label = self._idx2cls[pred.probs.top1]

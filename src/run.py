@@ -96,7 +96,7 @@ def run():
             cv2.polylines(img, np.array([SPEED_CONFIG['vertices']]), isClosed=True, color=(255, 0, 0), thickness=2)
             for idx in ret_speed:
                 retrieve = np.where(result.boxes.id == idx)[0][0]
-                cv2.putText(img, f'{ret_speed[idx]:.3f} km/h', (int(result.boxes.xyxy[retrieve][2:0:-1]), int(result.boxes.xyxy[retrieve][1]) + subscript_height * subscript_line), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0))
+                cv2.putText(img, f'{ret_speed[idx]:.3f} km/h', (int(result.boxes.xyxy[retrieve][2]), int(result.boxes.xyxy[retrieve][1]) + subscript_height * subscript_line), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0))
 
         if GENERAL_CONFIG['det_polume']:
             stats_line += 1
