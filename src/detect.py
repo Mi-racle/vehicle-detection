@@ -1,6 +1,6 @@
 import math
 from collections import deque
-from typing import Any
+from typing import Any, Sequence
 
 import cv2
 import numpy as np
@@ -10,15 +10,20 @@ from PIL import Image
 from shapely.geometry.linestring import LineString
 from shapely.geometry.point import Point
 from shapely.geometry.polygon import Polygon
-from torch import nn
-from torchvision import models, transforms
+from torchvision import transforms
+from torchvision.transforms import InterpolationMode
+from ultralytics import YOLO
 from ultralytics.engine.results import Results
 
 from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, VehicleSize, \
     is_between, cal_intersection_ratio
 
 
-def detect_jam(result: Results, cls_indices: list, n_threshold: int) -> bool:
+def detect_jam(
+        result: Results,
+        cls_indices: list,
+        n_threshold: int
+) -> bool:
     count = 0
 
     for ele in result.boxes.cls:
@@ -31,18 +36,30 @@ def detect_jam(result: Results, cls_indices: list, n_threshold: int) -> bool:
     return False
 
 
-def detect_motor_into_pavement(result: Results) -> bool:
+def detect_motor_into_pavement(
+        result: Results
+) -> bool:
     # TODO
     return True
 
 
-def detect_size(result: Results, vertices: list) -> dict[int, int]:
+def detect_size(
+        result: Results,
+        vertices: list
+) -> dict[int, int]:
     # TODO
 
     return {1: VehicleSize.LARGE}
 
 
-def detect_queue(result: Results, cls_indices: list, vertices: list, lengths_m: list, angle: float, int_threshold: float) -> float:
+def detect_queue(
+        result: Results,
+        cls_indices: list,
+        vertices: list,
+        lengths_m: list,
+        angle: float,
+        int_threshold: float
+) -> float:
     radian = math.pi * angle / 180
     rv0 = (0., 0.)
     rv1 = (0., lengths_m[0])
@@ -86,7 +103,13 @@ def detect_queue(result: Results, cls_indices: list, vertices: list, lengths_m: 
         return 0
 
 
-def detect_density(result: Results, cls_indices: list, vertices: list, int_threshold: float, length_m: float) -> float:
+def detect_density(
+        result: Results,
+        cls_indices: list,
+        vertices: list,
+        int_threshold: float,
+        length_m: float
+) -> float:
     polygon = Polygon(vertices)
     count = 0
 
@@ -107,30 +130,45 @@ def detect_density(result: Results, cls_indices: list, vertices: list, int_thres
 
 
 class ColorClassifier:
-    def __init__(self, cls_indices: list, vertices: list, weights='weights/resnet50.pth', cls_path='configs/color.yaml'):
+    def __init__(
+            self,
+            cls_indices: list,
+            resize: list,
+            min_size: list,
+            weights='weights/resnet50.pth',
+            cls_path='configs/color.yaml'
+    ):
+        self._res = {}
         self._cls_indices = cls_indices
-        self._polygon = Polygon(vertices)
         self._idx2cls: dict = yaml.safe_load(open(cls_path, 'r'))
-        self._model = models.resnet50()
-        self._model.fc = nn.Linear(self._model.fc.in_features, len(self._idx2cls))
-        self._model.load_state_dict(torch.load(weights))
+        self._model = YOLO(weights)
         self._transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            transforms.Resize(resize, interpolation=InterpolationMode.BILINEAR),
+            transforms.ToTensor()
         ])
+        self._min_size = min_size
 
-    def classify(self, result: Results, img: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray) -> dict[int, str]:
+    def classify(
+            self,
+            result: Results,
+            img: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray
+    ) -> dict[int, str]:
         if result.boxes.id is None:
             return {}
 
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
+        ret = {}
         idxes = []
         box_imgs = []
         for i, idx in enumerate(result.boxes.id):
-            centre = Point((result.boxes.xywh[i][0], result.boxes.xywh[i][1]))
-            if result.boxes.cls[i] not in self._cls_indices or not self._polygon.contains(centre):
+            x0, y0, w, h = result.boxes.xywh[i]
+            if result.boxes.cls[i] not in self._cls_indices:
+                continue
+
+            if w < self._min_size[0] or h < self._min_size[1]:
+                if self._res.get(idx):
+                    ret[idx] = self._res[idx]
                 continue
 
             xyxy = result.boxes.xyxy[i]
@@ -141,21 +179,30 @@ class ColorClassifier:
             idxes.append(idx)
             box_imgs.append(box_img)
 
-        box_imgs = torch.stack(box_imgs)
+        preds = self._model(torch.stack(box_imgs), verbose=False, device=0) if box_imgs else {}
 
-        output = self._model(box_imgs)
-        _, preds = torch.max(output, 1)
+        for i, pred in enumerate(preds):
+            label = self._idx2cls[pred.probs.top1]
+            self._res[idxes[i]] = label
+            ret[idxes[i]] = label
 
-        return {idxes[_]: self._idx2cls[int(label)] for _, label in enumerate(preds.tolist())}
+        return ret
 
 
 class VolumeDetector:
-    def __init__(self, cls_indices: list, vertices: list):
+    def __init__(
+            self,
+            cls_indices: list,
+            vertices: list
+    ):
         self._id_set = set()
         self._cls_indices = cls_indices
         self._polygon = Polygon(vertices)
 
-    def update(self, result: Results) -> int:
+    def update(
+            self,
+            result: Results
+    ) -> int:
         for i, xywh in enumerate(result.boxes.xywh):
             if result.boxes.cls[i] not in self._cls_indices:
                 continue
@@ -168,7 +215,15 @@ class VolumeDetector:
 
 
 class SpeedDetector:
-    def __init__(self, cls_indices: list, vertices: list, lengths_m: list, angle: float, grain_size_second: float, fps: float):
+    def __init__(
+            self,
+            cls_indices: list,
+            vertices: list,
+            lengths_m: list,
+            angle: float,
+            grain_size_second: float,
+            fps: float
+    ):
         self._id_set = set()
         self._cls_indices = cls_indices
         self._polygon = Polygon(vertices)
@@ -192,7 +247,10 @@ class SpeedDetector:
 
         self._homography_matrix = cal_homography_matrix(vertices, [rv0, rv1, rv2, rv3])
 
-    def update(self, result: Results) -> dict[int, float]:
+    def update(
+            self,
+            result: Results
+    ) -> dict[int, float]:
         if result.boxes.id is None:
             return {}
 
@@ -209,7 +267,7 @@ class SpeedDetector:
             speed = 0
 
             for j, buf in enumerate(self._buffer):
-                if not buf.boxes.id:
+                if buf.boxes.id is None:
                     continue
 
                 retrieve = np.where(buf.boxes.id == idx)[0]
@@ -233,12 +291,19 @@ class SpeedDetector:
 
 
 class PolumeDetector:
-    def __init__(self, cls_indices: list, iou_threshold: float):
+    def __init__(
+            self,
+            cls_indices: list,
+            iou_threshold: float
+    ):
         self._id_set = set()
         self._cls_indices = cls_indices
         self._iou_threshold = iou_threshold
 
-    def update(self, result: Results) -> int:
+    def update(
+            self,
+            result: Results
+    ) -> int:
         vehicle_retrieves = np.where(result.boxes.cls == self._cls_indices[1])[0]
 
         for i, xyxy in enumerate(result.boxes.xyxy):
@@ -260,7 +325,12 @@ class PolumeDetector:
         return len(self._id_set)
 
 
-def detect_pim(result: Results, cls_indices: list, vertices: list, iou_threshold=0.6) -> dict[int, bool]:
+def detect_pim(
+        result: Results,
+        cls_indices: list,
+        vertices: list,
+        iou_threshold=0.6
+) -> dict[int, bool]:
     ret = {}
 
     vehicle_retrieves = np.where(result.boxes.cls == cls_indices[1])[0]

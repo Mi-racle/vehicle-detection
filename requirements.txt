@@ -1,3 +1,4 @@
+matplotlib
 numpy
 opencv-python
 pillow
@@ -8,4 +9,5 @@ shapely
 tensorrt-cu11
 torch == 2.5.1+cu118
 torchvision == 0.20.1+cu118
+tqdm
 ultralytics

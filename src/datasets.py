@@ -6,11 +6,6 @@ from torch.utils.data import Dataset
 
 class ColorDataset(Dataset):
     def __init__(self, root_dir: str, transform=None):
-        """
-        初始化自定义数据集
-        :param root_dir: 数据集根目录
-        :param transform: 数据增强/预处理方法
-        """
         self.root_dir = root_dir
         self.transform = transform
         self.image_paths = []

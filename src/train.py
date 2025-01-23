@@ -18,6 +18,8 @@ def run():
         train_yolo()
     elif m_str.lower() == 'color':
         train_color()
+    elif m_str.lower() == 'color-yolo':
+        train_color_yolo()
     else:
         print('-m not supported')
 
@@ -25,7 +27,7 @@ def run():
 def train_yolo():
     from ultralytics import YOLO
 
-    model = YOLO('yolo11n.pt')
+    model = YOLO('weights/yolo11n.pt')
     model.train(
         data='../resources/datasets/data.yaml',  # path to dataset YAML
         epochs=1,  # number of training epochs
@@ -120,6 +122,20 @@ def train_color():
         print(f'Train Loss: {train_loss / len(train_loader):.4f}, Train Acc: {train_acc:.2f}%')
         print(f'Val Loss: {val_loss / len(val_loader):.4f}, Val Acc: {val_acc:.2f}%')
         print(f'End')
+
+
+def train_color_yolo():
+    from ultralytics import YOLO
+
+    model = YOLO('weights/yolo11n-cls.pt')
+    model.train(
+        data='../resources/simplified-car-color-dataset',  # path to dataset YAML
+        epochs=20,  # number of training epochs
+        imgsz=224,  # training image size
+        device=0,  # device to run on, i.e. device=0 or device=0,1,2,3 or device=cpu
+        batch=64
+    )
+    model.export()
 
 
 if __name__ == '__main__':

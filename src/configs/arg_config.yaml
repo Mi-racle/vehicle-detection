@@ -25,7 +25,7 @@ general_args: {
 #    right_x: none
 #  },
 
-  pre_trained: yolo11s.pt,
+  pre_trained: weights/yolo11s.pt,
   device: 0,  #  cpu or 0, 1, 2, 3...
 
   det_jam: false,
@@ -35,7 +35,7 @@ general_args: {
   det_density: false,
   clas_color: true,
   det_volume: false,
-  det_speed: false,
+  det_speed: true,
   det_polume: false,  # Pedestrian volume
   det_pim: false,  # Pedestrian Into Motor
 }
@@ -64,7 +64,9 @@ density_args: {
 }
 color_args: {
   cls_indices: [ 2, 3, 5, 7 ],
-  vertices: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
+  weights: weights/yolo11n-cls-color.pt,
+  resize: [ 224, 224 ],
+  min_size: [ 96, 96 ]
 }
 volume_args: {
   cls_indices: [ 2, 3, 5, 7 ],
