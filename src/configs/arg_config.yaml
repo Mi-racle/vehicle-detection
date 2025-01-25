@@ -30,11 +30,11 @@ general_args: {
 
   det_jam: false,
   det_mip: false,  # Motor Into Pavement
-  det_size: false,
   det_queue: false,
   det_density: false,
+  det_size: true,
   clas_color: true,
-  det_volume: false,
+  det_volume: true,
   det_speed: true,
   det_polume: false,  # Pedestrian volume
   det_pim: false,  # Pedestrian Into Motor
@@ -44,9 +44,7 @@ jam_args: {
   cls_indices: [ 2, 3, 5, 7 ]
 }
 mip_args: {  # Motor Into Pavement
-}
-size_args: {
-  vertices: [ [ 535, 74 ], [ 810, 74 ] ]
+            # TODO
 }
 queue_args: {
   #spacing_threshold: 30
@@ -62,8 +60,14 @@ density_args: {
   vertices: [ [ 1171, 0 ], [ 434, 290 ], [ 596, 290 ], [ 1231, 0 ] ],
   length_m: 100
 }
+size_args: {
+  cls_indices: [ 2, 5, 7 ],
+  vertices: [ [ 285, 354 ], [ 1088, 354 ] ],
+  thresholds: [ 120, 180 ],
+  delta_second: 0.2
+}
 color_args: {
-  cls_indices: [ 2, 3, 5, 7 ],
+  cls_indices: [ 2, 5, 7 ],
   weights: weights/yolo11n-cls-color.pt,
   resize: [ 224, 224 ],
   min_size: [ 96, 96 ]
@@ -77,7 +81,7 @@ speed_args: {
   vertices: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
   lengths_m: [ 60, 20, 60, 20 ],
   angle: 90,
-  grain_size_second: 0.4
+  delta_second: 0.4
 }
 polume_args: {
   cls_indices: [ 0, 3 ],
