@@ -1,6 +1,6 @@
 import math
 from collections import deque
-from typing import Any, Sequence
+from typing import Any
 
 import cv2
 import numpy as np
@@ -15,8 +15,8 @@ from torchvision.transforms import InterpolationMode
 from ultralytics import YOLO
 from ultralytics.engine.results import Results
 
-from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, VehicleSize, \
-    is_between, cal_intersection_ratio
+from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, is_between, \
+    cal_intersection_ratio
 
 
 def detect_jam(
@@ -46,7 +46,7 @@ def detect_motor_into_pavement(
 def detect_queue(
         result: Results,
         cls_indices: list,
-        vertices: list,
+        det_zone: list,
         lengths_m: list,
         angle: float,
         int_threshold: float
@@ -66,9 +66,9 @@ def detect_queue(
         d_b = cal_euclidean_distance(rv0, points[1])
         rv2 = points[0] if d_a > d_b else points[1]
 
-    homography_matrix = cal_homography_matrix(vertices, [rv0, rv1, rv2, rv3])
+    homography_matrix = cal_homography_matrix(det_zone, [rv0, rv1, rv2, rv3])
 
-    polygon = Polygon(vertices)
+    polygon = Polygon(det_zone)
     head_point = ()
     tail_point = ()
 
@@ -97,11 +97,11 @@ def detect_queue(
 def detect_density(
         result: Results,
         cls_indices: list,
-        vertices: list,
+        det_zone: list,
         int_threshold: float,
         length_m: float
 ) -> float:
-    polygon = Polygon(vertices)
+    polygon = Polygon(det_zone)
     count = 0
 
     for i, xyxy in enumerate(result.boxes.xyxy):
@@ -270,11 +270,11 @@ class VolumeDetector:
     def __init__(
             self,
             cls_indices: list,
-            vertices: list
+            det_zone: list
     ):
         self._id_set = set()
         self._cls_indices = cls_indices
-        self._polygon = Polygon(vertices)
+        self._polygon = Polygon(det_zone)
 
     def update(
             self,
@@ -295,7 +295,7 @@ class SpeedDetector:
     def __init__(
             self,
             cls_indices: list,
-            vertices: list,
+            det_zone: list,
             lengths_m: list,
             angle: float,
             delta_second: float,
@@ -303,7 +303,7 @@ class SpeedDetector:
     ):
         self._id_set = set()
         self._cls_indices = cls_indices
-        self._polygon = Polygon(vertices)
+        self._polygon = Polygon(det_zone)
         self._fps = fps
         self._buffer = deque(maxlen=max(round(delta_second * fps), 1))
 
@@ -322,7 +322,7 @@ class SpeedDetector:
             d_b = cal_euclidean_distance(rv0, points[1])
             rv2 = points[0] if d_a > d_b else points[1]
 
-        self._homography_matrix = cal_homography_matrix(vertices, [rv0, rv1, rv2, rv3])
+        self._homography_matrix = cal_homography_matrix(det_zone, [rv0, rv1, rv2, rv3])
 
     def update(
             self,
@@ -405,7 +405,7 @@ class PolumeDetector:
 def detect_pim(
         result: Results,
         cls_indices: list,
-        vertices: list,
+        det_zone: list,
         iou_threshold=0.6
 ) -> dict[int, bool]:
     ret = {}
@@ -426,9 +426,208 @@ def detect_pim(
                 break
 
         if walking:
-            upper = LineString([vertices[0], vertices[3]])
-            lower = LineString([vertices[1], vertices[2]])
+            upper = LineString([det_zone[0], det_zone[3]])
+            lower = LineString([det_zone[1], det_zone[2]])
             line = LineString([(xyxy[0], xyxy[3]), (xyxy[2], xyxy[3])])
             ret[result.boxes.id[i]] = not (line.intersects(lower) or is_between(line, lower, upper))
 
     return ret
+
+
+class ParkingDetector:
+    def __init__(
+            self,
+            cls_indices: list,
+            det_zone: list,
+            delta_second: float,
+            displacement_threshold: float,
+            fps: float
+    ):
+        self._id_set = set()
+        self._cls_indices = cls_indices
+        self._polygon = Polygon(det_zone)
+        self._displacement_threshold = displacement_threshold
+        self._fps = fps
+        self._buffer = deque(maxlen=max(round(delta_second * fps), 1))
+
+    def update(
+            self,
+            result: Results
+    ) -> dict[int, str]:
+        if result.boxes.id is None:
+            return {}
+
+        if len(self._buffer) == 0:
+            self._buffer.append(result)
+            return {idx: 'unknown' for idx in result.boxes.id}
+
+        ret = {}
+        for i, idx in enumerate(result.boxes.id):
+            if result.boxes.cls[i] not in self._cls_indices:
+                continue
+
+            state = 'unknown'
+
+            for j, buf in enumerate(self._buffer):
+                if buf.boxes.id is None:
+                    continue
+
+                retrieve = np.where(buf.boxes.id == idx)[0]
+
+                if retrieve.shape[0] >= 1:
+                    list_idx = retrieve[0]
+                    prev_point = buf.boxes.xywh[list_idx][:2]
+                    curr_point = result.boxes.xywh[i][:2]
+
+                    motion_vector = curr_point - prev_point
+                    displacement = np.linalg.norm(motion_vector)
+
+                    if displacement < self._displacement_threshold:
+                        center = Point(result.boxes.xywh[i][:2])
+
+                        if self._polygon.contains(center):
+                            state = 'illegally parked'
+                        else:
+                            state = 'legally parked'
+
+                    else:
+                        state = 'moving'
+
+                    break
+
+            ret[idx] = state
+
+        self._buffer.append(result)
+
+        return ret
+
+
+class WrongwayDetector:
+    def __init__(
+            self,
+            cls_indices: list,
+            det_zone: list,
+            delta_second: float,
+            fps: float,
+            correct_way='up'
+    ):
+        self._id_set = set()
+        self._cls_indices = cls_indices
+        self._polygon = Polygon(det_zone)
+        self._fps = fps
+        self._buffer = deque(maxlen=max(round(delta_second * fps), 1))
+        self._correct_way = correct_way
+
+    def update(
+            self,
+            result: Results
+    ) -> dict[int, dict]:
+        if result.boxes.id is None:
+            return {}
+
+        if len(self._buffer) == 0:
+            self._buffer.append(result)
+            return {idx: {'vector': [0., 0.], 'wrongway': False} for idx in result.boxes.id}
+
+        ret = {}
+        for i, idx in enumerate(result.boxes.id):
+            center = Point(result.boxes.xywh[i][:2])
+            if result.boxes.cls[i] not in self._cls_indices or not self._polygon.contains(center):
+                continue
+
+            motion_vector = [0., 0.]
+
+            for j, buf in enumerate(self._buffer):
+                if buf.boxes.id is None:
+                    continue
+
+                retrieve = np.where(buf.boxes.id == idx)[0]
+
+                if retrieve.shape[0] >= 1:
+                    list_idx = retrieve[0]
+                    prev_point = buf.boxes.xywh[list_idx][:2]
+                    curr_point = result.boxes.xywh[i][:2]
+
+                    motion_vector = curr_point - prev_point
+                    norm = np.linalg.norm(motion_vector)
+                    motion_vector /= norm
+                    motion_vector = list(motion_vector)
+                    break
+
+            if self._correct_way == 'up':
+                wrongway = motion_vector[1] > 0
+            elif self._correct_way == 'down':
+                wrongway = motion_vector[1] < 0
+            elif self._correct_way == 'left':
+                wrongway = motion_vector[0] < 0
+            elif self._correct_way == 'right':
+                wrongway = motion_vector[0] > 0
+            else:
+                wrongway = False
+
+            ret[idx] = {'vector': motion_vector, 'wrongway': wrongway}
+
+        self._buffer.append(result)
+
+        return ret
+
+
+class LanechangeDetector:
+    def __init__(
+            self,
+            cls_indices: list,
+            det_zone: list,
+            delta_second: float,
+            solid_lines: list,
+            fps: float
+    ):
+        self._id_set = set()
+        self._cls_indices = cls_indices
+        self._polygon = Polygon(det_zone)
+        self._fps = fps
+        self._buffer = deque(maxlen=max(round(delta_second * fps), 1))
+        self._solid_lines = [LineString(solid_line) for solid_line in solid_lines]
+
+    def update(
+            self,
+            result: Results
+    ) -> dict[int, bool]:
+        if result.boxes.id is None:
+            return {}
+
+        if len(self._buffer) == 0:
+            self._buffer.append(result)
+            return {idx: False for idx in result.boxes.id}
+
+        ret = {}
+        for i, idx in enumerate(result.boxes.id):
+            center = Point(result.boxes.xywh[i][:2])
+            if result.boxes.cls[i] not in self._cls_indices or not self._polygon.contains(center):
+                continue
+
+            lanechange = False
+
+            for j, buf in enumerate(self._buffer):
+                if buf.boxes.id is None:
+                    continue
+
+                retrieve = np.where(buf.boxes.id == idx)[0]
+
+                if retrieve.shape[0] >= 1:
+                    list_idx = retrieve[0]
+                    prev_point = buf.boxes.xywh[list_idx][:2]
+                    next_point = 2 * result.boxes.xywh[i][:2] - prev_point
+
+                    track = LineString([prev_point, next_point])
+                    for solid_line in self._solid_lines:
+                        if solid_line.intersects(track):
+                            lanechange = True
+                            break
+
+                    break
+
+            ret[idx] = lanechange
+
+        self._buffer.append(result)
+
+        return ret

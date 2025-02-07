@@ -23,6 +23,9 @@ def run():
     polume_detector = PolumeDetector(**POLUME_CONFIG) if GENERAL_CONFIG['det_polume'] else None
     size_detector = SizeDetector(fps=fps, **SIZE_CONFIG) if GENERAL_CONFIG['det_size'] else None
     color_classifier = ColorClassifier(**COLOR_CONFIG) if GENERAL_CONFIG['clas_color'] else None
+    parking_detector = ParkingDetector(fps=fps, **PARKING_CONFIG) if GENERAL_CONFIG['det_parking'] else None
+    wrongway_detector = WrongwayDetector(fps=fps, **WRONGWAY_CONFIG) if GENERAL_CONFIG['det_wrongway'] else None
+    lanechange_detector = LanechangeDetector(fps=fps, **LANECHANGE_CONFIG) if GENERAL_CONFIG['det_lanechange'] else None
 
     while cap_in.isOpened():
         st0 = time()
@@ -55,6 +58,7 @@ def run():
             persist=True,
             verbose=False,
             device=0,
+            classes=[2, 5, 7]
         )[0].cpu().numpy()
         print(f'Model cost: {time() - st1:.3f} ms')
 
@@ -75,7 +79,7 @@ def run():
         if GENERAL_CONFIG['det_queue']:
             stats_line += 1
             ret_queue = detect_queue(result, **QUEUE_CONFIG)
-            cv2.polylines(img, np.array([QUEUE_CONFIG['vertices']]), isClosed=True, color=(0, 255, 255), thickness=2)
+            cv2.polylines(img, np.array([QUEUE_CONFIG['det_zone']]), isClosed=True, color=(0, 255, 255), thickness=2)
             cv2.putText(
                 img,
                 f'Queue: {ret_queue:.2f} m',
@@ -88,7 +92,7 @@ def run():
         if GENERAL_CONFIG['det_density']:
             stats_line += 1
             ret_density = detect_density(result, **DENSITY_CONFIG)
-            cv2.polylines(img, np.array([DENSITY_CONFIG['vertices']]), isClosed=True, color=(0, 255, 255), thickness=2)
+            cv2.polylines(img, np.array([DENSITY_CONFIG['det_zone']]), isClosed=True, color=(0, 255, 255), thickness=2)
             cv2.putText(
                 img,
                 f'Density: {ret_density:.2f} cars per km',
@@ -136,7 +140,7 @@ def run():
         if GENERAL_CONFIG['det_volume']:
             stats_line += 1
             ret_volume = volume_detector.update(result)
-            cv2.polylines(img, np.array([VOLUME_CONFIG['vertices']]), isClosed=True, color=(0, 255, 0), thickness=2)
+            cv2.polylines(img, np.array([VOLUME_CONFIG['det_zone']]), isClosed=True, color=(0, 255, 0), thickness=2)
             cv2.putText(
                 img,
                 f'Volume: {ret_volume}',
@@ -149,14 +153,14 @@ def run():
         if GENERAL_CONFIG['det_speed']:
             subscript_line += 1
             ret_speed = speed_detector.update(result)
-            cv2.polylines(img, np.array([SPEED_CONFIG['vertices']]), isClosed=True, color=(255, 255, 0), thickness=2)
+            cv2.polylines(img, np.array([SPEED_CONFIG['det_zone']]), isClosed=True, color=(255, 255, 0), thickness=2)
             for idx in ret_speed:
                 retrieve = np.where(result.boxes.id == idx)[0][0]
                 xyxy = result.boxes.xyxy[retrieve]
                 cv2.putText(
                     img,
                     f'{ret_speed[idx]:.3f} km/h',
-                    (int(xyxy[2]), int(xyxy[1]) + subscript_height * subscript_line),
+                    (int(xyxy[2]), int(xyxy[1] + subscript_height * subscript_line)),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.4,
                     (255, 255, 0)
@@ -166,6 +170,7 @@ def run():
             stats_line += 1
             ret_polume = polume_detector.update(result)
             # cv2.polylines(img, np.array([POLUME_CONFIG['vertices']]), isClosed=True, color=(0, 100, 255), thickness=2)
+            cv2.line(img, SIZE_CONFIG['vertices'][0], SIZE_CONFIG['vertices'][1], color=(255, 0, 0))
             cv2.putText(
                 img,
                 f'Pedestrian volume: {ret_polume}',
@@ -177,13 +182,76 @@ def run():
 
         if GENERAL_CONFIG['det_pim']:
             ret_pim = detect_pim(result, **PIM_CONFIG)
-            # cv2.polylines(img, np.array([PIM_CONFIG['vertices']]), isClosed=True, color=(0, 200, 0), thickness=2)
+            # cv2.polylines(img, np.array([PIM_CONFIG['det_zone']]), isClosed=True, color=(0, 200, 0), thickness=2)
             for idx in ret_pim:
                 retrieve = np.where(result.boxes.id == idx)[0][0]
-                tl = (int(result.boxes.xyxy[retrieve][0]), int(result.boxes.xyxy[retrieve][1]))
-                br = (int(result.boxes.xyxy[retrieve][2]), int(result.boxes.xyxy[retrieve][3]))
+                xyxy = result.boxes.xyxy[retrieve]
+                tl = (int(xyxy[0]), int(xyxy[1]))
+                br = (int(xyxy[2]), int(xyxy[3]))
                 color = (0, 0, 200) if ret_pim[idx] else (0, 200, 0)
                 cv2.rectangle(img, tl, br, color=color, thickness=2)
+
+        if GENERAL_CONFIG['det_parking']:
+            ret_parking = parking_detector.update(result)
+            cv2.polylines(img, np.array([PARKING_CONFIG['det_zone']]), isClosed=True, color=(0, 0, 255), thickness=2)
+            for idx in ret_parking:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                xyxy = result.boxes.xyxy[retrieve]
+                state = ret_parking[idx]
+                color = (0, 0, 255) if state == 'illegally parked' else (0, 255, 0)  # duplicated for demo
+                text = state if state == 'illegally parked' else ''  # duplicated for demo
+                cv2.putText(
+                    img,
+                    text,
+                    (int(xyxy[0]), int(xyxy[3] + subscript_height)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    color
+                )
+
+        if GENERAL_CONFIG['det_wrongway']:
+            subscript_line += 1
+            ret_wrongway = wrongway_detector.update(result)
+            cv2.polylines(img, np.array([WRONGWAY_CONFIG['det_zone']]), isClosed=True, color=(0, 255, 255), thickness=2)
+            for idx in ret_wrongway:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                xywh = result.boxes.xywh[retrieve]
+                xyxy = result.boxes.xyxy[retrieve]
+                vector = ret_wrongway[idx]['vector']
+                wrongway = ret_wrongway[idx]['wrongway']
+                color = (0, 0, 255) if wrongway else (0, 255, 0)
+                cv2.arrowedLine(
+                    img,
+                    (int(xywh[0]), int(xywh[1])),
+                    (int(xywh[0] + 50 * vector[0]), int(xywh[1] + 50 * vector[1])),
+                    color=color
+                )
+                cv2.putText(
+                    img,
+                    'wrong way' if wrongway else 'right way',
+                    (int(xyxy[2]), int(xyxy[1] + subscript_height * subscript_line)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    color
+                )
+
+        if GENERAL_CONFIG['det_lanechange']:
+            ret_lanechange = lanechange_detector.update(result)
+            cv2.polylines(img, np.array([LANECHANGE_CONFIG['det_zone']]), isClosed=True, color=(127, 127, 0), thickness=2)
+            for solid_line in LANECHANGE_CONFIG['solid_lines']:
+                cv2.line(img, solid_line[0], solid_line[1], color=(255, 255, 255), thickness=2)
+            for idx in ret_lanechange:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                xyxy = result.boxes.xyxy[retrieve]
+                lanechange = ret_lanechange[idx]
+                cv2.putText(
+                    img,
+                    'changing' if lanechange else 'staying',
+                    (int(xyxy[0]), int(xyxy[3] + subscript_height)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    (0, 0, 255) if lanechange else (0, 255, 0)
+                )
 
         print(f'Total cost: {time() - st0:.3f} ms')
         print('---------------------')

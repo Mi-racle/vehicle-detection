@@ -10,20 +10,14 @@ general_args: {
 #  },
 
   source: ../resources/traffic2.mp4,
+#  source: ../resources/hangzhou.mp4,
+#  source: ../resources/pedestrians.mp4,
   crop: {
     top_y: none,
     bottom_y: none,
     left_x: none,
     right_x: none
   },
-
-#  source: ../resources/pedestrians.mp4,
-#  crop: {
-#    top_y: none,
-#    bottom_y: none,
-#    left_x: none,
-#    right_x: none
-#  },
 
   pre_trained: weights/yolo11s.pt,
   device: 0,  #  cpu or 0, 1, 2, 3...
@@ -32,12 +26,15 @@ general_args: {
   det_mip: false,  # Motor Into Pavement
   det_queue: false,
   det_density: false,
-  det_size: true,
-  clas_color: true,
-  det_volume: true,
-  det_speed: true,
+  det_size: false,
+  clas_color: false,
+  det_volume: false,
+  det_speed: false,
   det_polume: false,  # Pedestrian volume
   det_pim: false,  # Pedestrian Into Motor
+  det_parking: false,  # Illegal parking
+  det_wrongway: false,  # Driving wrong way
+  det_lanechange: true,  # change lanes over solid line
 }
 jam_args: {
   n_threshold: 30,
@@ -50,14 +47,14 @@ queue_args: {
   #spacing_threshold: 30
   int_threshold: 0.75,  # intersection
   cls_indices: [ 2, 3, 5, 7 ],
-  vertices: [ [ 1171, 0 ], [ 434, 291 ], [ 596, 289 ], [ 1231, 0 ] ],
+  det_zone: [ [ 1171, 0 ], [ 434, 291 ], [ 596, 289 ], [ 1231, 0 ] ],
   lengths_m: [ 100, 3, 100, 3 ],
   angle: 90,
 }
 density_args: {
   int_threshold: 0.75,
   cls_indices: [ 2, 3, 5, 7 ],
-  vertices: [ [ 1171, 0 ], [ 434, 290 ], [ 596, 290 ], [ 1231, 0 ] ],
+  det_zone: [ [ 1171, 0 ], [ 434, 290 ], [ 596, 290 ], [ 1231, 0 ] ],
   length_m: 100
 }
 size_args: {
@@ -74,11 +71,11 @@ color_args: {
 }
 volume_args: {
   cls_indices: [ 2, 3, 5, 7 ],
-  vertices: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ]
+  det_zone: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ]
 }
 speed_args: {
   cls_indices: [ 2, 3, 5, 7 ],
-  vertices: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
+  det_zone: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
   lengths_m: [ 60, 20, 60, 20 ],
   angle: 90,
   delta_second: 0.4
@@ -89,7 +86,7 @@ polume_args: {
 }
 pim_args: {
   cls_indices: [ 0, 3 ],
-  vertices: [ [ 0, 144 ], [ 0, 663 ], [ 1920, 1049 ], [ 1920, 406 ] ],
+  det_zone: [ [ 0, 144 ], [ 0, 663 ], [ 1920, 1049 ], [ 1920, 406 ] ],
   iou_threshold: 0.6
 }
 plate_args: {
@@ -100,4 +97,27 @@ plate_args: {
   lang: ch,
   show_log: false,
   use_gpu: true
+}
+parking_args: {
+  cls_indices: [ 2, 5, 7 ],
+  det_zone: [ [ 483, 230 ], [ 0, 637 ], [ 0, 719 ], [ 210, 719 ], [685, 230] ],
+  delta_second: 0.4,
+  displacement_threshold: 16  # by px
+}
+wrongway_args: {
+  cls_indices: [ 2, 5, 7],
+  det_zone: [ [ 0, 34 ], [ 0, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
+  delta_second: 0.4,
+  correct_way: up
+}
+lanechange_args: {
+  cls_indices: [ 2, 5, 7 ],
+  det_zone: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
+  delta_second: 0.3,
+  solid_lines: [
+    [ [623, 0], [240, 719] ],
+    [ [651, 0], [552, 719] ],
+    [ [681, 0], [862, 719] ],
+    [ [710, 0], [1160, 719] ],
+  ]
 }

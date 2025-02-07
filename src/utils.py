@@ -103,3 +103,11 @@ class VehicleSize(IntEnum):
     LARGE = 0
     MEDIUM = 1
     SMALL = 2
+
+
+@unique
+class VehicleState(IntEnum):
+    UNKNOWN = 0
+    MOVING = 1
+    LEGALLY_PARKED = 2
+    ILLEGALLY_PARKED = 3
