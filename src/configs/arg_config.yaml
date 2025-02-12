@@ -18,30 +18,27 @@ general_args: {
     left_x: none,
     right_x: none
   },
+  dest: demo.mp4,
 
   pre_trained: weights/yolo11s.pt,
   device: 0,  #  cpu or 0, 1, 2, 3...
 
   det_jam: false,
-  det_mip: false,  # Motor Into Pavement
   det_queue: false,
   det_density: false,
-  det_size: false,
-  clas_color: false,
-  det_volume: false,
-  det_speed: false,
+  det_size: true,
+  clas_color: true,
+  det_volume: true,
+  det_speed: true,
   det_polume: false,  # Pedestrian volume
   det_pim: false,  # Pedestrian Into Motor
   det_parking: false,  # Illegal parking
-  det_wrongway: false,  # Driving wrong way
+  det_wrongway: true,  # Driving wrong way
   det_lanechange: true,  # change lanes over solid line
 }
 jam_args: {
   n_threshold: 30,
   cls_indices: [ 2, 3, 5, 7 ]
-}
-mip_args: {  # Motor Into Pavement
-            # TODO
 }
 queue_args: {
   #spacing_threshold: 30

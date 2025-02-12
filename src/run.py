@@ -14,9 +14,11 @@ def run():
     crop_right_x = None if crop_size['right_x'] == 'none' else int(crop_size['right_x'])
 
     vehicle_det_model = YOLO(GENERAL_CONFIG['pre_trained'])
-    cap_out = None
     cap_in = cv2.VideoCapture(GENERAL_CONFIG['source'])
     fps = cap_in.get(cv2.CAP_PROP_FPS)
+    width = int(cap_in.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap_in.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap_out = cv2.VideoWriter(GENERAL_CONFIG['dest'], cv2.VideoWriter.fourcc(*'mp4v'), fps, (width, height))
 
     volume_detector = VolumeDetector(**VOLUME_CONFIG) if GENERAL_CONFIG['det_volume'] else None
     speed_detector = SpeedDetector(fps=fps, **SPEED_CONFIG) if GENERAL_CONFIG['det_speed'] else None
@@ -27,6 +29,10 @@ def run():
     wrongway_detector = WrongwayDetector(fps=fps, **WRONGWAY_CONFIG) if GENERAL_CONFIG['det_wrongway'] else None
     lanechange_detector = LanechangeDetector(fps=fps, **LANECHANGE_CONFIG) if GENERAL_CONFIG['det_lanechange'] else None
 
+    stats_height = 30
+    subscript_height = 12
+    px_per_scale = 30
+
     while cap_in.isOpened():
         st0 = time()
 
@@ -35,24 +41,14 @@ def run():
             break
 
         stats_line = 0
-        stats_height = 30
         subscript_line = 0
-        subscript_height = 12
 
         frame = frame[crop_top_y: crop_bottom_y, crop_left_x: crop_right_x, :]
-
-        if not cap_out:
-            cap_out = cv2.VideoWriter(
-                f'demo.mp4',
-                cv2.VideoWriter_fourcc(*'mp4v'),
-                fps,
-                (frame.shape[1], frame.shape[0])
-            )
 
         st1 = time()
         result = vehicle_det_model.track(
             source=frame,
-            imgsz=frame.shape[1],
+            imgsz=width,
             save=False,
             agnostic_nms=True,
             persist=True,
@@ -72,7 +68,7 @@ def run():
                 f'Jam: {ret_jam}',
                 (0, stats_height * stats_line),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                1,
+                stats_height / px_per_scale,
                 (0, 0, 255)
             )
 
@@ -85,7 +81,7 @@ def run():
                 f'Queue: {ret_queue:.2f} m',
                 (0, stats_height * stats_line),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                1,
+                stats_height / px_per_scale,
                 (0, 255, 255)
             )
 
@@ -98,7 +94,7 @@ def run():
                 f'Density: {ret_density:.2f} cars per km',
                 (0, stats_height * stats_line),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                1,
+                stats_height / px_per_scale,
                 (0, 255, 255)
             )
 
@@ -117,7 +113,7 @@ def run():
                     f'{ret_size[idx]}',
                     (int(xyxy[2]), int(xyxy[1]) + subscript_height * subscript_line),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.4,
+                    subscript_height / px_per_scale,
                     color
                 )
 
@@ -133,7 +129,7 @@ def run():
                     f'{ret_color[idx]}',
                     (int(xyxy[2]), int(xyxy[1]) + subscript_height * subscript_line),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.4,
+                    subscript_height / px_per_scale,
                     color
                 )
 
@@ -146,7 +142,7 @@ def run():
                 f'Volume: {ret_volume}',
                 (0, stats_height * stats_line),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                1,
+                stats_height / px_per_scale,
                 (0, 255, 0)
             )
 
@@ -162,7 +158,7 @@ def run():
                     f'{ret_speed[idx]:.3f} km/h',
                     (int(xyxy[2]), int(xyxy[1] + subscript_height * subscript_line)),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.4,
+                    subscript_height / px_per_scale,
                     (255, 255, 0)
                 )
 
@@ -176,7 +172,7 @@ def run():
                 f'Pedestrian volume: {ret_polume}',
                 (0, stats_height * stats_line),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                1,
+                stats_height / px_per_scale,
                 (0, 100, 255)
             )
 
@@ -205,7 +201,7 @@ def run():
                     text,
                     (int(xyxy[0]), int(xyxy[3] + subscript_height)),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.4,
+                    subscript_height / px_per_scale,
                     color
                 )
 
@@ -231,13 +227,13 @@ def run():
                     'wrong way' if wrongway else 'right way',
                     (int(xyxy[2]), int(xyxy[1] + subscript_height * subscript_line)),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.4,
+                    subscript_height / px_per_scale,
                     color
                 )
 
         if GENERAL_CONFIG['det_lanechange']:
             ret_lanechange = lanechange_detector.update(result)
-            cv2.polylines(img, np.array([LANECHANGE_CONFIG['det_zone']]), isClosed=True, color=(127, 127, 0), thickness=2)
+            cv2.polylines(img, np.array([LANECHANGE_CONFIG['det_zone']]), True, color=(127, 127, 0), thickness=2)
             for solid_line in LANECHANGE_CONFIG['solid_lines']:
                 cv2.line(img, solid_line[0], solid_line[1], color=(255, 255, 255), thickness=2)
             for idx in ret_lanechange:
@@ -249,18 +245,15 @@ def run():
                     'changing' if lanechange else 'staying',
                     (int(xyxy[0]), int(xyxy[3] + subscript_height)),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.4,
+                    subscript_height / px_per_scale,
                     (0, 0, 255) if lanechange else (0, 255, 0)
                 )
 
         print(f'Total cost: {time() - st0:.3f} ms')
         print('---------------------')
 
-        # cv2.imwrite('re.png', img)
-        # break
-
         cap_out.write(img)
-        cv2.imshow('test', img)
+        cv2.imshow('Test', img)
         if cv2.waitKey(1) >= 0:
             break
 

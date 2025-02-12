@@ -36,13 +36,6 @@ def detect_jam(
     return False
 
 
-def detect_motor_into_pavement(
-        result: Results
-) -> bool:
-    # TODO
-    return True
-
-
 def detect_queue(
         result: Results,
         cls_indices: list,
