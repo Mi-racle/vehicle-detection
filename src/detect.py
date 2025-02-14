@@ -1,5 +1,6 @@
 import math
 from collections import deque
+from threading import Thread
 from typing import Any
 
 import cv2
@@ -16,7 +17,7 @@ from ultralytics import YOLO
 from ultralytics.engine.results import Results
 
 from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, is_between, \
-    cal_intersection_ratio
+    cal_intersection_ratio, increment_path, generate_video, generate_videos, update_counts
 
 
 def detect_jam(
@@ -122,11 +123,11 @@ class SizeDetector:
             delta_second: float,
             fps: float
     ):
-        self._res = {}
-        self._cls_indices = cls_indices
-        self._line = LineString(vertices)
-        self._thresholds = thresholds
-        self._buffer = deque(maxlen=max(round(delta_second * fps), 1))
+        self.__res = {}
+        self.__cls_indices = cls_indices
+        self.__line = LineString(vertices)
+        self.__thresholds = thresholds
+        self.__buffer = deque(maxlen=max(round(delta_second * fps), 1))
 
     def update(
             self,
@@ -135,67 +136,51 @@ class SizeDetector:
         if result.boxes.id is None:
             return {}
 
-        if len(self._buffer) == 0:
-            self._buffer.appendleft(result)
+        if len(self.__buffer) == 0:
+            self.__buffer.appendleft(result)
             return {idx: 'unknown' for idx in result.boxes.id}
 
         ret = {}
         for i, idx in enumerate(result.boxes.id):
-            if self._res.get(idx):
-                ret[idx] = self._res[idx]
+            if self.__res.get(idx):
+                ret[idx] = self.__res[idx]
                 continue
 
-            if result.boxes.cls[i] not in self._cls_indices:
+            if result.boxes.cls[i] not in self.__cls_indices:
                 continue
 
-            curr_x, curr_y, w, h = result.boxes.xywh[i]
+            w, h = result.boxes.xywh[i][-2:]
+            curr_x, curr_y, br_x, br_y = result.boxes.xyxy[i]
 
             cal_flag = False
-            points = [[curr_x, curr_y]]  # [[x, y], ...]
-            for j, buf in enumerate(self._buffer):
+            for j, buf in enumerate(self.__buffer):
                 if buf.boxes.id is None:
                     continue
 
                 retrieve = np.where(buf.boxes.id == idx)[0]
 
                 if retrieve.shape[0] >= 1:
-                    prev_x, prev_y = buf.boxes.xywh[retrieve[0]][:2]
-                    points.append([prev_x, prev_y])
+                    prev_x, prev_y = buf.boxes.xyxy[retrieve[0]][:2]
+                    delta_track = LineString([[prev_x, prev_y], [curr_x, curr_y]])
 
-                    delta_track = LineString(points[:2])
-                    if j == 0:
-                        if delta_track.intersects(self._line):
-                            cal_flag = True
-                        else:
-                            break
+                    if delta_track.intersects(self.__line):
+                        cal_flag = True
+                        break
 
             if cal_flag:
-                points = np.array(points)
-                xs, ys = points[:, 0], points[:, 1]
+                car_length = h
 
-                try:
-                    tan, intercept = np.polyfit(xs, ys, 1)
-
-                    if tan == 0:
-                        car_length = w
-                    else:
-                        sin = math.cos(math.atan(tan)) * tan
-                        car_length = abs(h / sin)
-
-                except ValueError:  # vertical vector
-                    car_length = h
-
-                if car_length < self._thresholds[0]:
+                if car_length < self.__thresholds[0]:
                     size = 'small'
-                elif car_length < self._thresholds[1]:
+                elif car_length < self.__thresholds[1]:
                     size = 'medium'
                 else:
                     size = 'large'
 
-                self._res[idx] = size
+                self.__res[idx] = size
                 ret[idx] = size
 
-        self._buffer.appendleft(result)
+        self.__buffer.appendleft(result)
 
         return ret
 
@@ -209,15 +194,15 @@ class ColorClassifier:
             weights='weights/yolo11n-cls-color.pt',
             cls_path='configs/color.yaml'
     ):
-        self._res = {}
-        self._cls_indices = cls_indices
-        self._idx2cls: dict = yaml.safe_load(open(cls_path, 'r'))
-        self._model = YOLO(weights)
-        self._transform = transforms.Compose([
+        self.__res = {}
+        self.__cls_indices = cls_indices
+        self.__idx2cls: dict = yaml.safe_load(open(cls_path, 'r'))
+        self.__model = YOLO(weights)
+        self.__transform = transforms.Compose([
             transforms.Resize(resize, interpolation=InterpolationMode.BILINEAR),
             transforms.ToTensor()
         ])
-        self._min_size = min_size
+        self.__min_size = min_size
 
     def classify(
             self,
@@ -233,27 +218,27 @@ class ColorClassifier:
         idxes = []
         box_imgs = []
         for i, idx in enumerate(result.boxes.id):
-            if result.boxes.cls[i] not in self._cls_indices:
+            if result.boxes.cls[i] not in self.__cls_indices:
                 continue
 
             *_, w, h = result.boxes.xywh[i]
-            if w < self._min_size[0] or h < self._min_size[1]:
-                if self._res.get(idx):
-                    ret[idx] = self._res[idx]
+            if w < self.__min_size[0] or h < self.__min_size[1]:
+                if self.__res.get(idx):
+                    ret[idx] = self.__res[idx]
                 continue
 
             x1, y1, x2, y2 = list(map(int, result.boxes.xyxy[i]))
             box_img = img[y1: y2, x1: x2, :]
-            box_img = self._transform(Image.fromarray(box_img))
+            box_img = self.__transform(Image.fromarray(box_img))
 
             idxes.append(idx)
             box_imgs.append(box_img)
 
-        preds = self._model.predict(torch.stack(box_imgs), verbose=False, device=0) if box_imgs else {}
+        preds = self.__model.predict(torch.stack(box_imgs), verbose=False, device=0) if box_imgs else {}
 
         for i, pred in enumerate(preds):
-            label = self._idx2cls[pred.probs.top1]
-            self._res[idxes[i]] = label
+            label = self.__idx2cls[pred.probs.top1]
+            self.__res[idxes[i]] = label
             ret[idxes[i]] = label
 
         return ret
@@ -265,23 +250,23 @@ class VolumeDetector:
             cls_indices: list,
             det_zone: list
     ):
-        self._id_set = set()
-        self._cls_indices = cls_indices
-        self._polygon = Polygon(det_zone)
+        self.__id_set = set()
+        self.__cls_indices = cls_indices
+        self.__polygon = Polygon(det_zone)
 
     def update(
             self,
             result: Results
     ) -> int:
         for i, xywh in enumerate(result.boxes.xywh):
-            if result.boxes.cls[i] not in self._cls_indices:
+            if result.boxes.cls[i] not in self.__cls_indices:
                 continue
 
             center = Point(xywh[:2])
-            if self._polygon.contains(center):
-                self._id_set.add(result.boxes.id[i])
+            if self.__polygon.contains(center):
+                self.__id_set.add(result.boxes.id[i])
 
-        return len(self._id_set)
+        return len(self.__id_set)
 
 
 class SpeedDetector:
@@ -292,13 +277,24 @@ class SpeedDetector:
             lengths_m: list,
             angle: float,
             delta_second: float,
+            duration_threshold: float,
+            video_length: float,
+            speed_threshold: float,
             fps: float
     ):
-        self._id_set = set()
-        self._cls_indices = cls_indices
-        self._polygon = Polygon(det_zone)
-        self._fps = fps
-        self._buffer = deque(maxlen=max(round(delta_second * fps), 1))
+        self.__id_set = set()
+        self.__cls_indices = cls_indices
+        self.__polygon = Polygon(det_zone)
+        self.__fps = fps
+        self.__delta_frame_num = max(round(delta_second * fps), 1)
+        self.__duration_frame_num = max(round(duration_threshold * fps), 1)
+        self.__video_frame_num = max(round(video_length * fps), 1)
+        self.__result_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
+        self.__frame_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
+        self.__speed_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
+        self.__speed_threshold = speed_threshold
+        self.__speed_counts = {}
+        self.__output_countdowns = {}
 
         radian = math.pi * angle / 180
         rv0 = (0., 0.)
@@ -319,24 +315,28 @@ class SpeedDetector:
 
     def update(
             self,
-            result: Results
+            result: Results,
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray
     ) -> dict[int, float]:
         if result.boxes.id is None:
             return {}
 
-        if len(self._buffer) == 0:
-            self._buffer.append(result)
+        if len(self.__result_buffer) == 0:
+            self.__result_buffer.append(result)
+            self.__frame_buffer.append(frame)
+            self.__speed_buffer.append({idx: f'0.0 km/h' for idx in result.boxes.id})
             return {idx: 0 for idx in result.boxes.id}
 
         ret = {}
+        texts = {}
         for i, idx in enumerate(result.boxes.id):
             center = Point(result.boxes.xywh[i][:2])
-            if result.boxes.cls[i] not in self._cls_indices or not self._polygon.contains(center):
+            if result.boxes.cls[i] not in self.__cls_indices or not self.__polygon.contains(center):
                 continue
 
             speed = 0
 
-            for j, buf in enumerate(self._buffer):
+            for j, buf in enumerate(self.__result_buffer):
                 if buf.boxes.id is None:
                     continue
 
@@ -350,12 +350,35 @@ class SpeedDetector:
                     points = np.array([[curr_x, curr_y], [prev_x, prev_y]])
                     repro_points = reproject(points, self._homography_matrix)
                     distance = cal_euclidean_distance(repro_points[0], repro_points[1])
-                    speed = distance / ((len(self._buffer) - j) / self._fps) * 3.6
+                    speed = distance / ((len(self.__result_buffer) - j) / self.__fps) * 3.6
                     break
 
             ret[idx] = speed
+            texts[idx] = f'{speed:.3f} km/h'
 
-        self._buffer.append(result)
+            update_counts(
+                True,
+                True,
+                idx,
+                self.__speed_counts,
+                self.__output_countdowns,
+                self.__duration_frame_num,
+                self.__video_frame_num
+            )
+
+        generate_videos(
+            f'runs/speed',
+            self.__result_buffer,
+            self.__frame_buffer,
+            self.__fps,
+            self.__video_frame_num,
+            self.__output_countdowns,
+            self.__speed_buffer
+        )
+
+        self.__result_buffer.append(result)
+        self.__frame_buffer.append(frame)
+        self.__speed_buffer.append(texts)
 
         return ret
 
@@ -366,18 +389,18 @@ class PolumeDetector:
             cls_indices: list,
             iou_threshold: float
     ):
-        self._id_set = set()
-        self._cls_indices = cls_indices
-        self._iou_threshold = iou_threshold
+        self.__id_set = set()
+        self.__cls_indices = cls_indices
+        self.__iou_threshold = iou_threshold
 
     def update(
             self,
             result: Results
     ) -> int:
-        vehicle_retrieves = np.where(result.boxes.cls == self._cls_indices[1])[0]
+        vehicle_retrieves = np.where(result.boxes.cls == self.__cls_indices[1])[0]
 
         for i, xyxy in enumerate(result.boxes.xyxy):
-            if result.boxes.cls[i] not in self._cls_indices[0:]:
+            if result.boxes.cls[i] not in self.__cls_indices[0:]:
                 continue
 
             walking = True
@@ -385,14 +408,14 @@ class PolumeDetector:
             for retrieve in vehicle_retrieves:
                 iou = cal_intersection_ratio(xyxy, result.boxes.xyxy[retrieve])
 
-                if iou > self._iou_threshold:
+                if iou > self.__iou_threshold:
                     walking = False
                     break
 
             if walking:
-                self._id_set.add(result.boxes.id[i])
+                self.__id_set.add(result.boxes.id[i])
 
-        return len(self._id_set)
+        return len(self.__id_set)
 
 
 def detect_pim(
@@ -433,35 +456,45 @@ class ParkingDetector:
             cls_indices: list,
             det_zone: list,
             delta_second: float,
+            duration_threshold: float,
+            video_length: float,
             displacement_threshold: float,
             fps: float
     ):
-        self._id_set = set()
-        self._cls_indices = cls_indices
-        self._polygon = Polygon(det_zone)
-        self._displacement_threshold = displacement_threshold
-        self._fps = fps
-        self._buffer = deque(maxlen=max(round(delta_second * fps), 1))
+        self.__id_set = set()
+        self.__cls_indices = cls_indices
+        self.__polygon = Polygon(det_zone)
+        self.__displacement_threshold = displacement_threshold
+        self.__fps = fps
+        self.__delta_frame_num = max(round(delta_second * fps), 1)
+        self.__duration_frame_num = max(round(duration_threshold * fps), 1)
+        self.__video_frame_num = max(round(video_length * fps), 1)
+        self.__result_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
+        self.__frame_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
+        self.__parking_counts = {}
+        self.__output_countdowns = {}
 
     def update(
             self,
-            result: Results
+            result: Results,
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray,
     ) -> dict[int, str]:
         if result.boxes.id is None:
             return {}
 
-        if len(self._buffer) == 0:
-            self._buffer.append(result)
+        if len(self.__result_buffer) == 0:
+            self.__result_buffer.append(result)
+            self.__frame_buffer.append(frame)
             return {idx: 'unknown' for idx in result.boxes.id}
 
         ret = {}
         for i, idx in enumerate(result.boxes.id):
-            if result.boxes.cls[i] not in self._cls_indices:
+            if result.boxes.cls[i] not in self.__cls_indices:
                 continue
 
             state = 'unknown'
 
-            for j, buf in enumerate(self._buffer):
+            for j, buf in enumerate(self.__result_buffer):
                 if buf.boxes.id is None:
                     continue
 
@@ -475,10 +508,10 @@ class ParkingDetector:
                     motion_vector = curr_point - prev_point
                     displacement = np.linalg.norm(motion_vector)
 
-                    if displacement < self._displacement_threshold:
+                    if displacement < self.__displacement_threshold:
                         center = Point(result.boxes.xywh[i][:2])
 
-                        if self._polygon.contains(center):
+                        if self.__polygon.contains(center):
                             state = 'illegally parked'
                         else:
                             state = 'legally parked'
@@ -490,7 +523,27 @@ class ParkingDetector:
 
             ret[idx] = state
 
-        self._buffer.append(result)
+            update_counts(
+                state,
+                'illegally parked',
+                idx,
+                self.__parking_counts,
+                self.__output_countdowns,
+                self.__duration_frame_num,
+                self.__video_frame_num
+            )
+
+        generate_videos(
+            f'runs/parking',
+            self.__result_buffer,
+            self.__frame_buffer,
+            self.__fps,
+            self.__video_frame_num,
+            self.__output_countdowns
+        )
+
+        self.__result_buffer.append(result)
+        self.__frame_buffer.append(frame)
 
         return ret
 
@@ -501,36 +554,46 @@ class WrongwayDetector:
             cls_indices: list,
             det_zone: list,
             delta_second: float,
+            duration_threshold: float,
+            video_length: float,
             fps: float,
             correct_way='up'
     ):
-        self._id_set = set()
-        self._cls_indices = cls_indices
-        self._polygon = Polygon(det_zone)
-        self._fps = fps
-        self._buffer = deque(maxlen=max(round(delta_second * fps), 1))
-        self._correct_way = correct_way
+        self.__id_set = set()
+        self.__cls_indices = cls_indices
+        self.__polygon = Polygon(det_zone)
+        self.__fps = fps
+        self.__correct_way = correct_way
+        self.__delta_frame_num = max(round(delta_second * fps), 1)
+        self.__duration_frame_num = max(round(duration_threshold * fps), 1)
+        self.__video_frame_num = max(round(video_length * fps), 1)
+        self.__result_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
+        self.__frame_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
+        self.__wrongway_counts = {}
+        self.__output_countdowns = {}
 
     def update(
             self,
-            result: Results
+            result: Results,
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray,
     ) -> dict[int, dict]:
         if result.boxes.id is None:
             return {}
 
-        if len(self._buffer) == 0:
-            self._buffer.append(result)
+        if len(self.__result_buffer) == 0:
+            self.__result_buffer.append(result)
+            self.__frame_buffer.append(frame)
             return {idx: {'vector': [0., 0.], 'wrongway': False} for idx in result.boxes.id}
 
         ret = {}
         for i, idx in enumerate(result.boxes.id):
             center = Point(result.boxes.xywh[i][:2])
-            if result.boxes.cls[i] not in self._cls_indices or not self._polygon.contains(center):
+            if result.boxes.cls[i] not in self.__cls_indices or not self.__polygon.contains(center):
                 continue
 
             motion_vector = [0., 0.]
 
-            for j, buf in enumerate(self._buffer):
+            for j, buf in enumerate(self.__result_buffer):
                 if buf.boxes.id is None:
                     continue
 
@@ -547,22 +610,44 @@ class WrongwayDetector:
                     motion_vector = list(motion_vector)
                     break
 
-            if self._correct_way == 'up':
-                wrongway = motion_vector[1] > 0
-            elif self._correct_way == 'down':
-                wrongway = motion_vector[1] < 0
-            elif self._correct_way == 'left':
-                wrongway = motion_vector[0] < 0
-            elif self._correct_way == 'right':
-                wrongway = motion_vector[0] > 0
-            else:
-                wrongway = False
-
+            wrongway = self.__is_wrongway(motion_vector)
             ret[idx] = {'vector': motion_vector, 'wrongway': wrongway}
 
-        self._buffer.append(result)
+            update_counts(
+                wrongway,
+                True,
+                idx,
+                self.__wrongway_counts,
+                self.__output_countdowns,
+                self.__duration_frame_num,
+                self.__video_frame_num
+            )
+
+        generate_videos(
+            f'runs/wrongway',
+            self.__result_buffer,
+            self.__frame_buffer,
+            self.__fps,
+            self.__video_frame_num,
+            self.__output_countdowns
+        )
+
+        self.__result_buffer.append(result)
+        self.__frame_buffer.append(frame)
 
         return ret
+
+    def __is_wrongway(self, motion_vector: list[float]) -> bool:
+        if self.__correct_way == 'up':
+            return motion_vector[1] > 0
+        elif self.__correct_way == 'down':
+            return motion_vector[1] < 0
+        elif self.__correct_way == 'left':
+            return motion_vector[0] < 0
+        elif self.__correct_way == 'right':
+            return motion_vector[0] > 0
+        else:
+            return False
 
 
 class LanechangeDetector:
@@ -571,36 +656,46 @@ class LanechangeDetector:
             cls_indices: list,
             det_zone: list,
             delta_second: float,
+            duration_threshold: float,
+            video_length: float,
             solid_lines: list,
             fps: float
     ):
-        self._id_set = set()
-        self._cls_indices = cls_indices
-        self._polygon = Polygon(det_zone)
-        self._fps = fps
-        self._buffer = deque(maxlen=max(round(delta_second * fps), 1))
-        self._solid_lines = [LineString(solid_line) for solid_line in solid_lines]
+        self.__id_set = set()
+        self.__cls_indices = cls_indices
+        self.__polygon = Polygon(det_zone)
+        self.__fps = fps
+        self.__delta_frame_num = max(round(delta_second * fps), 1)
+        self.__duration_frame_num = max(round(duration_threshold * fps), 1)
+        self.__video_frame_num = max(round(video_length * fps), 1)
+        self.__result_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
+        self.__frame_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
+        self.__solid_lines = [LineString(solid_line) for solid_line in solid_lines]
+        self.__lanechange_counts = {}  # {id: count}
+        self.__output_countdowns = {}
 
     def update(
             self,
-            result: Results
+            result: Results,
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray
     ) -> dict[int, bool]:
         if result.boxes.id is None:
             return {}
 
-        if len(self._buffer) == 0:
-            self._buffer.append(result)
+        if len(self.__result_buffer) == 0:
+            self.__result_buffer.append(result)
+            self.__frame_buffer.append(frame)
             return {idx: False for idx in result.boxes.id}
 
         ret = {}
         for i, idx in enumerate(result.boxes.id):
             center = Point(result.boxes.xywh[i][:2])
-            if result.boxes.cls[i] not in self._cls_indices or not self._polygon.contains(center):
+            if result.boxes.cls[i] not in self.__cls_indices or not self.__polygon.contains(center):
                 continue
 
             lanechange = False
 
-            for j, buf in enumerate(self._buffer):
+            for j, buf in enumerate(list(self.__result_buffer)[-self.__delta_frame_num:]):
                 if buf.boxes.id is None:
                     continue
 
@@ -612,7 +707,7 @@ class LanechangeDetector:
                     next_point = 2 * result.boxes.xywh[i][:2] - prev_point
 
                     track = LineString([prev_point, next_point])
-                    for solid_line in self._solid_lines:
+                    for solid_line in self.__solid_lines:
                         if solid_line.intersects(track):
                             lanechange = True
                             break
@@ -621,6 +716,26 @@ class LanechangeDetector:
 
             ret[idx] = lanechange
 
-        self._buffer.append(result)
+            update_counts(
+                lanechange,
+                True,
+                idx,
+                self.__lanechange_counts,
+                self.__output_countdowns,
+                self.__duration_frame_num,
+                self.__video_frame_num
+            )
+
+        generate_videos(
+            f'runs/lanechange',
+            self.__result_buffer,
+            self.__frame_buffer,
+            self.__fps,
+            self.__video_frame_num,
+            self.__output_countdowns
+        )
+
+        self.__result_buffer.append(result)
+        self.__frame_buffer.append(frame)
 
         return ret

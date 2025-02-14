@@ -12,6 +12,8 @@ general_args: {
   source: ../resources/traffic2.mp4,
 #  source: ../resources/hangzhou.mp4,
 #  source: ../resources/pedestrians.mp4,
+#  source: ../resources/Highway-2.mp4,
+
   crop: {
     top_y: none,
     bottom_y: none,
@@ -26,15 +28,15 @@ general_args: {
   det_jam: false,
   det_queue: false,
   det_density: false,
-  det_size: true,
-  clas_color: true,
-  det_volume: true,
+  det_size: false,
+  clas_color: false,
+  det_volume: false,
   det_speed: true,
   det_polume: false,  # Pedestrian volume
   det_pim: false,  # Pedestrian Into Motor
   det_parking: false,  # Illegal parking
-  det_wrongway: true,  # Driving wrong way
-  det_lanechange: true,  # change lanes over solid line
+  det_wrongway: false,  # Driving wrong way
+  det_lanechange: false,  # change lanes over solid line
 }
 jam_args: {
   n_threshold: 30,
@@ -56,8 +58,8 @@ density_args: {
 }
 size_args: {
   cls_indices: [ 2, 5, 7 ],
-  vertices: [ [ 285, 354 ], [ 1088, 354 ] ],
-  thresholds: [ 120, 180 ],
+  vertices: [ [ 0, 370 ], [ 1279, 370 ] ],
+  thresholds: [ 160, 240 ],
   delta_second: 0.2
 }
 color_args: {
@@ -75,7 +77,10 @@ speed_args: {
   det_zone: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
   lengths_m: [ 60, 20, 60, 20 ],
   angle: 90,
-  delta_second: 0.4
+  delta_second: 0.4,
+  duration_threshold: 1.0,
+  video_length: 2.0,
+  speed_threshold: 90  # km/h
 }
 polume_args: {
   cls_indices: [ 0, 3 ],
@@ -99,18 +104,24 @@ parking_args: {
   cls_indices: [ 2, 5, 7 ],
   det_zone: [ [ 483, 230 ], [ 0, 637 ], [ 0, 719 ], [ 210, 719 ], [685, 230] ],
   delta_second: 0.4,
+  duration_threshold: 10.0,
+  video_length: 10.0,
   displacement_threshold: 16  # by px
 }
 wrongway_args: {
   cls_indices: [ 2, 5, 7],
   det_zone: [ [ 0, 34 ], [ 0, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
   delta_second: 0.4,
-  correct_way: up
+  duration_threshold: 0.5,
+  video_length: 2.0,
+  correct_way: down
 }
 lanechange_args: {
   cls_indices: [ 2, 5, 7 ],
   det_zone: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
   delta_second: 0.3,
+  duration_threshold: 0.5,
+  video_length: 2.0,
   solid_lines: [
     [ [623, 0], [240, 719] ],
     [ [651, 0], [552, 719] ],

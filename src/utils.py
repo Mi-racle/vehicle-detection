@@ -1,5 +1,8 @@
+import glob
 import math
-from enum import unique, IntEnum
+import re
+from pathlib import Path
+from threading import Thread
 from typing import Sequence, Any
 
 import cv2
@@ -94,20 +97,131 @@ def cal_intersection_ratio(
     intersection_area = intersection_width * intersection_height
     box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
 
-    iou = intersection_area / box1_area if box1_area > 0 else 0
-    return iou
+    return intersection_area / box1_area if box1_area > 0 else 0
 
 
-@unique
-class VehicleSize(IntEnum):
-    LARGE = 0
-    MEDIUM = 1
-    SMALL = 2
+def increment_path(dst_path: str, exist_ok=False, sep='', mkdir=False):
+    """Increment file or directory path, i.e. runs/exp --> runs/exp{sep}2, runs/exp{sep}3, ... etc."""
+    dst_path = Path(dst_path)  # os-agnostic
+
+    if dst_path.exists() and not exist_ok:
+        suffix = dst_path.suffix
+        dst_path = dst_path.with_suffix('')
+        dirs = glob.glob(f"{dst_path}{sep}*")  # similar paths
+        matches = [re.search(rf"%s{sep}(\d+)" % dst_path.stem, d) for d in dirs]
+        i = [int(m.groups()[0]) for m in matches if m]  # indices
+        n = max(i) + 1 if i else 1  # increment number
+        dst_path = Path(f"{dst_path}{sep}{n}{suffix}")  # update path
+
+    _dir = dst_path if dst_path.suffix == '' else dst_path.parent  # directory
+
+    if not _dir.exists() and mkdir:
+        _dir.mkdir(parents=True, exist_ok=True)  # make directory
+
+    return str(dst_path)
 
 
-@unique
-class VehicleState(IntEnum):
-    UNKNOWN = 0
-    MOVING = 1
-    LEGALLY_PARKED = 2
-    ILLEGALLY_PARKED = 3
+def generate_video(
+        dst_name: str,
+        frames: Sequence[cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray],
+        fps: float
+):
+    if not frames:
+        return
+
+    cap_out = cv2.VideoWriter(
+        increment_path(dst_name),
+        cv2.VideoWriter.fourcc(*'mp4v'),
+        fps,
+        (frames[0].shape[1], frames[0].shape[0])
+    )
+
+    for frame in frames:
+        cap_out.write(frame)
+
+    cap_out.release()
+
+
+def generate_videos(
+        dst_name: str,
+        result_buffer: Sequence,
+        frame_buffer: Sequence[cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray],
+        fps: float,
+        frame_num: int,
+        countdowns: dict,
+        text_buffer: Sequence[dict] | None = None
+) -> dict:
+    for idx in list(countdowns.keys()):
+        countdowns[idx] -= 1
+
+        if countdowns[idx] <= 0:
+            del countdowns[idx]
+
+            frames_to_write = []
+            for k, buffered_frame in enumerate(list(frame_buffer)[-frame_num:]):
+                frame_copy = buffered_frame.copy()
+                buffered_result = result_buffer[k - min(frame_num, len(result_buffer))]
+
+                if buffered_result.boxes.id is None:
+                    continue
+
+                retrieve = np.where(buffered_result.boxes.id == idx)[0]
+
+                if retrieve.shape[0] >= 1:
+                    list_idx = retrieve[0]
+
+                    xyxy = buffered_result.boxes.xyxy[list_idx]
+
+                    cv2.rectangle(
+                        frame_copy,
+                        (int(xyxy[0]), int(xyxy[1])),
+                        (int(xyxy[2]), int(xyxy[3])),
+                        (0, 0, 255),
+                        thickness=2
+                    )
+
+                    # TODO bug
+                    texts = text_buffer[k]
+                    if texts:
+                        cv2.putText(
+                            frame_copy,
+                            texts[idx],
+                            (int(xyxy[2]), int(xyxy[1] + 12)),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            .4,
+                            (0, 0, 255)
+                        )
+
+                frames_to_write.append(frame_copy)
+
+            Thread(
+                target=generate_video,
+                args=(dst_name + f'{str(int(idx)).zfill(7)}.mp4', frames_to_write, fps),
+                daemon=True
+            ).start()
+
+    return countdowns
+
+
+def update_counts(
+        value: Any,
+        target_value: Any,
+        idx,
+        counts: dict,
+        countdowns: dict,
+        duration_frame_num: int,
+        video_frame_num: int
+):
+    if value == target_value:
+        if idx in counts:
+            counts[idx] += 1
+        elif idx not in countdowns:
+            counts[idx] = 1
+    
+        if idx in counts and counts[idx] >= duration_frame_num:
+            countdowns[idx] = video_frame_num // 2
+            del counts[idx]
+    
+    else:
+        if idx in counts:
+            del counts[idx]

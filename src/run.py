@@ -101,7 +101,7 @@ def run():
         if GENERAL_CONFIG['det_size']:
             subscript_line += 1
             ret_size = size_detector.update(result)
-            # cv2.line(img, SIZE_CONFIG['vertices'][0], SIZE_CONFIG['vertices'][1], color=(255, 0, 0))
+            cv2.line(img, SIZE_CONFIG['vertices'][0], SIZE_CONFIG['vertices'][1], color=(255, 0, 0))
             for idx in ret_size:
                 retrieve = np.where(result.boxes.id == idx)[0][0]
                 xyxy = result.boxes.xyxy[retrieve]
@@ -148,7 +148,7 @@ def run():
 
         if GENERAL_CONFIG['det_speed']:
             subscript_line += 1
-            ret_speed = speed_detector.update(result)
+            ret_speed = speed_detector.update(result, frame)
             cv2.polylines(img, np.array([SPEED_CONFIG['det_zone']]), isClosed=True, color=(255, 255, 0), thickness=2)
             for idx in ret_speed:
                 retrieve = np.where(result.boxes.id == idx)[0][0]
@@ -188,7 +188,7 @@ def run():
                 cv2.rectangle(img, tl, br, color=color, thickness=2)
 
         if GENERAL_CONFIG['det_parking']:
-            ret_parking = parking_detector.update(result)
+            ret_parking = parking_detector.update(result, frame)
             cv2.polylines(img, np.array([PARKING_CONFIG['det_zone']]), isClosed=True, color=(0, 0, 255), thickness=2)
             for idx in ret_parking:
                 retrieve = np.where(result.boxes.id == idx)[0][0]
@@ -207,7 +207,7 @@ def run():
 
         if GENERAL_CONFIG['det_wrongway']:
             subscript_line += 1
-            ret_wrongway = wrongway_detector.update(result)
+            ret_wrongway = wrongway_detector.update(result, frame)
             cv2.polylines(img, np.array([WRONGWAY_CONFIG['det_zone']]), isClosed=True, color=(0, 255, 255), thickness=2)
             for idx in ret_wrongway:
                 retrieve = np.where(result.boxes.id == idx)[0][0]
@@ -232,7 +232,7 @@ def run():
                 )
 
         if GENERAL_CONFIG['det_lanechange']:
-            ret_lanechange = lanechange_detector.update(result)
+            ret_lanechange = lanechange_detector.update(result, frame)
             cv2.polylines(img, np.array([LANECHANGE_CONFIG['det_zone']]), True, color=(127, 127, 0), thickness=2)
             for solid_line in LANECHANGE_CONFIG['solid_lines']:
                 cv2.line(img, solid_line[0], solid_line[1], color=(255, 255, 255), thickness=2)
