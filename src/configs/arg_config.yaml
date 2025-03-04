@@ -9,9 +9,9 @@ general_args: {
 #    right_x: 2800
 #  },
 
-  source: ../resources/traffic2.mp4,
+#  source: ../resources/traffic2.mp4,
 #  source: ../resources/hangzhou.mp4,
-#  source: ../resources/pedestrians.mp4,
+  source: ../resources/pedestrians.mp4,
 #  source: ../resources/Highway-2.mp4,
 
   crop: {
@@ -31,12 +31,13 @@ general_args: {
   det_size: false,
   clas_color: false,
   det_volume: false,
-  det_speed: true,
+  det_velocity: false,
   det_polume: false,  # Pedestrian volume
-  det_pim: false,  # Pedestrian Into Motor
+  det_pim: true,  # Pedestrian Into Motor
   det_parking: false,  # Illegal parking
   det_wrongway: false,  # Driving wrong way
   det_lanechange: false,  # change lanes over solid line
+  det_speeding: false,
 }
 jam_args: {
   n_threshold: 30,
@@ -70,17 +71,17 @@ color_args: {
 }
 volume_args: {
   cls_indices: [ 2, 3, 5, 7 ],
-  det_zone: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ]
+  det_line: [ [ 339, 215 ], [ 1060, 215 ] ],
+  video_length: 10.0
 }
-speed_args: {
+velocity_args: {
   cls_indices: [ 2, 3, 5, 7 ],
   det_zone: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
   lengths_m: [ 60, 20, 60, 20 ],
   angle: 90,
   delta_second: 0.4,
   duration_threshold: 1.0,
-  video_length: 2.0,
-  speed_threshold: 90  # km/h
+  video_length: 2.0
 }
 polume_args: {
   cls_indices: [ 0, 3 ],
@@ -88,8 +89,10 @@ polume_args: {
 }
 pim_args: {
   cls_indices: [ 0, 3 ],
-  det_zone: [ [ 0, 144 ], [ 0, 663 ], [ 1920, 1049 ], [ 1920, 406 ] ],
-  iou_threshold: 0.6
+#  det_zone: [ [ 0, 144 ], [ 0, 663 ], [ 1919, 1049 ], [ 1919, 406 ] ],
+  det_zone: [ [ 0, 0 ], [ 0, 144 ], [ 1919, 406 ], [ 1919, 0 ] ],
+  iou_threshold: 0.6,
+  duration_threshold: 5.0
 }
 plate_args: {
   det_model_dir: weights/ch_PP-OCRv4_det,
@@ -102,7 +105,7 @@ plate_args: {
 }
 parking_args: {
   cls_indices: [ 2, 5, 7 ],
-  det_zone: [ [ 483, 230 ], [ 0, 637 ], [ 0, 719 ], [ 210, 719 ], [685, 230] ],
+  noparking_zone: [ [ 483, 230 ], [ 0, 637 ], [ 0, 719 ], [ 210, 719 ], [685, 230] ],
   delta_second: 0.4,
   duration_threshold: 10.0,
   video_length: 10.0,
@@ -128,4 +131,14 @@ lanechange_args: {
     [ [681, 0], [862, 719] ],
     [ [710, 0], [1160, 719] ],
   ]
+}
+speeding_args: {
+  cls_indices: [ 2, 5, 7 ],
+  det_zone: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
+  lengths_m: [ 60, 20, 60, 20 ],
+  angle: 90,
+  delta_second: 0.4,
+  duration_threshold: 1.0,
+  video_length: 2.0,
+  speed_threshold: 90  # km/h
 }

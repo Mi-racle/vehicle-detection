@@ -1,741 +1,383 @@
-import math
-from collections import deque
-from threading import Thread
-from typing import Any
-
-import cv2
-import numpy as np
-import torch
-import yaml
-from PIL import Image
-from shapely.geometry.linestring import LineString
-from shapely.geometry.point import Point
-from shapely.geometry.polygon import Polygon
-from torchvision import transforms
-from torchvision.transforms import InterpolationMode
-from ultralytics import YOLO
-from ultralytics.engine.results import Results
-
-from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, is_between, \
-    cal_intersection_ratio, increment_path, generate_video, generate_videos, update_counts
-
-
-def detect_jam(
-        result: Results,
-        cls_indices: list,
-        n_threshold: int
-) -> bool:
-    count = 0
-
-    for ele in result.boxes.cls:
-        if ele in cls_indices:
-            count += 1
-
-            if count >= n_threshold:
-                return True
-
-    return False
-
-
-def detect_queue(
-        result: Results,
-        cls_indices: list,
-        det_zone: list,
-        lengths_m: list,
-        angle: float,
-        int_threshold: float
-) -> float:
-    radian = math.pi * angle / 180
-    rv0 = (0., 0.)
-    rv1 = (0., lengths_m[0])
-    rv3 = (lengths_m[-1] * math.sin(radian), lengths_m[-1] * math.cos(radian))
-
-    points = cal_intersection_points(rv1, rv3, lengths_m[1], lengths_m[2])
-
-    if len(points) == 1:
-        rv2 = points[0]
-
-    else:
-        d_a = cal_euclidean_distance(rv0, points[0])
-        d_b = cal_euclidean_distance(rv0, points[1])
-        rv2 = points[0] if d_a > d_b else points[1]
-
-    homography_matrix = cal_homography_matrix(det_zone, [rv0, rv1, rv2, rv3])
-
-    polygon = Polygon(det_zone)
-    head_point = ()
-    tail_point = ()
-
-    for i, xyxy in enumerate(result.boxes.xyxy):
-        if result.boxes.cls[i] not in cls_indices:
-            continue
-
-        bl = (xyxy[0], xyxy[3])
-        br = (xyxy[2], xyxy[3])
-        line = LineString([bl, br])
-
-        if line.intersection(polygon).length / line.length >= int_threshold:
-            head_point = br if not head_point else (head_point if head_point[1] <= br[1] else br)
-            tail_point = br if not tail_point else (tail_point if tail_point[1] > br[1] else br)
-
-    if head_point and tail_point:
-        points = np.array([head_point, tail_point])
-        repro_points = reproject(points, homography_matrix)
-        distance = cal_euclidean_distance(repro_points[0], repro_points[1])
-        return distance
-
-    else:
-        return 0
-
-
-def detect_density(
-        result: Results,
-        cls_indices: list,
-        det_zone: list,
-        int_threshold: float,
-        length_m: float
-) -> float:
-    polygon = Polygon(det_zone)
-    count = 0
-
-    for i, xyxy in enumerate(result.boxes.xyxy):
-        if result.boxes.cls[i] not in cls_indices:
-            continue
-
-        line = LineString([(xyxy[0], xyxy[3]), (xyxy[2], xyxy[3])])
-
-        if line.intersection(polygon).length / line.length >= int_threshold:
-            count += 1
-
-    if length_m == 0:
-        return 0
-
-    else:
-        return count / length_m * 1e3
-
-
-class SizeDetector:
-    def __init__(
-            self,
-            cls_indices: list,
-            vertices: list,
-            thresholds: list,
-            delta_second: float,
-            fps: float
-    ):
-        self.__res = {}
-        self.__cls_indices = cls_indices
-        self.__line = LineString(vertices)
-        self.__thresholds = thresholds
-        self.__buffer = deque(maxlen=max(round(delta_second * fps), 1))
-
-    def update(
-            self,
-            result: Results
-    ) -> dict[int, str]:
-        if result.boxes.id is None:
-            return {}
-
-        if len(self.__buffer) == 0:
-            self.__buffer.appendleft(result)
-            return {idx: 'unknown' for idx in result.boxes.id}
-
-        ret = {}
-        for i, idx in enumerate(result.boxes.id):
-            if self.__res.get(idx):
-                ret[idx] = self.__res[idx]
-                continue
-
-            if result.boxes.cls[i] not in self.__cls_indices:
-                continue
-
-            w, h = result.boxes.xywh[i][-2:]
-            curr_x, curr_y, br_x, br_y = result.boxes.xyxy[i]
-
-            cal_flag = False
-            for j, buf in enumerate(self.__buffer):
-                if buf.boxes.id is None:
-                    continue
-
-                retrieve = np.where(buf.boxes.id == idx)[0]
-
-                if retrieve.shape[0] >= 1:
-                    prev_x, prev_y = buf.boxes.xyxy[retrieve[0]][:2]
-                    delta_track = LineString([[prev_x, prev_y], [curr_x, curr_y]])
-
-                    if delta_track.intersects(self.__line):
-                        cal_flag = True
-                        break
-
-            if cal_flag:
-                car_length = h
-
-                if car_length < self.__thresholds[0]:
-                    size = 'small'
-                elif car_length < self.__thresholds[1]:
-                    size = 'medium'
-                else:
-                    size = 'large'
-
-                self.__res[idx] = size
-                ret[idx] = size
-
-        self.__buffer.appendleft(result)
-
-        return ret
-
-
-class ColorClassifier:
-    def __init__(
-            self,
-            cls_indices: list,
-            resize: list,
-            min_size: list,
-            weights='weights/yolo11n-cls-color.pt',
-            cls_path='configs/color.yaml'
-    ):
-        self.__res = {}
-        self.__cls_indices = cls_indices
-        self.__idx2cls: dict = yaml.safe_load(open(cls_path, 'r'))
-        self.__model = YOLO(weights)
-        self.__transform = transforms.Compose([
-            transforms.Resize(resize, interpolation=InterpolationMode.BILINEAR),
-            transforms.ToTensor()
-        ])
-        self.__min_size = min_size
-
-    def classify(
-            self,
-            result: Results,
-            img: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray
-    ) -> dict[int, str]:
-        if result.boxes.id is None:
-            return {}
-
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-        ret = {}
-        idxes = []
-        box_imgs = []
-        for i, idx in enumerate(result.boxes.id):
-            if result.boxes.cls[i] not in self.__cls_indices:
-                continue
-
-            *_, w, h = result.boxes.xywh[i]
-            if w < self.__min_size[0] or h < self.__min_size[1]:
-                if self.__res.get(idx):
-                    ret[idx] = self.__res[idx]
-                continue
-
-            x1, y1, x2, y2 = list(map(int, result.boxes.xyxy[i]))
-            box_img = img[y1: y2, x1: x2, :]
-            box_img = self.__transform(Image.fromarray(box_img))
-
-            idxes.append(idx)
-            box_imgs.append(box_img)
-
-        preds = self.__model.predict(torch.stack(box_imgs), verbose=False, device=0) if box_imgs else {}
-
-        for i, pred in enumerate(preds):
-            label = self.__idx2cls[pred.probs.top1]
-            self.__res[idxes[i]] = label
-            ret[idxes[i]] = label
-
-        return ret
-
-
-class VolumeDetector:
-    def __init__(
-            self,
-            cls_indices: list,
-            det_zone: list
-    ):
-        self.__id_set = set()
-        self.__cls_indices = cls_indices
-        self.__polygon = Polygon(det_zone)
-
-    def update(
-            self,
-            result: Results
-    ) -> int:
-        for i, xywh in enumerate(result.boxes.xywh):
-            if result.boxes.cls[i] not in self.__cls_indices:
-                continue
-
-            center = Point(xywh[:2])
-            if self.__polygon.contains(center):
-                self.__id_set.add(result.boxes.id[i])
-
-        return len(self.__id_set)
-
-
-class SpeedDetector:
-    def __init__(
-            self,
-            cls_indices: list,
-            det_zone: list,
-            lengths_m: list,
-            angle: float,
-            delta_second: float,
-            duration_threshold: float,
-            video_length: float,
-            speed_threshold: float,
-            fps: float
-    ):
-        self.__id_set = set()
-        self.__cls_indices = cls_indices
-        self.__polygon = Polygon(det_zone)
-        self.__fps = fps
-        self.__delta_frame_num = max(round(delta_second * fps), 1)
-        self.__duration_frame_num = max(round(duration_threshold * fps), 1)
-        self.__video_frame_num = max(round(video_length * fps), 1)
-        self.__result_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__frame_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__speed_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__speed_threshold = speed_threshold
-        self.__speed_counts = {}
-        self.__output_countdowns = {}
-
-        radian = math.pi * angle / 180
-        rv0 = (0., 0.)
-        rv1 = (0., lengths_m[0])
-        rv3 = (lengths_m[-1] * math.sin(radian), lengths_m[-1] * math.cos(radian))
-
-        points = cal_intersection_points(rv1, rv3, lengths_m[1], lengths_m[2])
-
-        if len(points) == 1:
-            rv2 = points[0]
-
-        else:
-            d_a = cal_euclidean_distance(rv0, points[0])
-            d_b = cal_euclidean_distance(rv0, points[1])
-            rv2 = points[0] if d_a > d_b else points[1]
-
-        self._homography_matrix = cal_homography_matrix(det_zone, [rv0, rv1, rv2, rv3])
-
-    def update(
-            self,
-            result: Results,
-            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray
-    ) -> dict[int, float]:
-        if result.boxes.id is None:
-            return {}
-
-        if len(self.__result_buffer) == 0:
-            self.__result_buffer.append(result)
-            self.__frame_buffer.append(frame)
-            self.__speed_buffer.append({idx: f'0.0 km/h' for idx in result.boxes.id})
-            return {idx: 0 for idx in result.boxes.id}
-
-        ret = {}
-        texts = {}
-        for i, idx in enumerate(result.boxes.id):
-            center = Point(result.boxes.xywh[i][:2])
-            if result.boxes.cls[i] not in self.__cls_indices or not self.__polygon.contains(center):
-                continue
-
-            speed = 0
-
-            for j, buf in enumerate(self.__result_buffer):
-                if buf.boxes.id is None:
-                    continue
-
-                retrieve = np.where(buf.boxes.id == idx)[0]
-
-                if retrieve.shape[0] >= 1:
-                    list_idx = retrieve[0]
-                    prev_x, prev_y = buf.boxes.xywh[list_idx][:2]
-                    curr_x, curr_y = result.boxes.xywh[i][:2]
-
-                    points = np.array([[curr_x, curr_y], [prev_x, prev_y]])
-                    repro_points = reproject(points, self._homography_matrix)
-                    distance = cal_euclidean_distance(repro_points[0], repro_points[1])
-                    speed = distance / ((len(self.__result_buffer) - j) / self.__fps) * 3.6
-                    break
-
-            ret[idx] = speed
-            texts[idx] = f'{speed:.3f} km/h'
-
-            update_counts(
-                True,
-                True,
-                idx,
-                self.__speed_counts,
-                self.__output_countdowns,
-                self.__duration_frame_num,
-                self.__video_frame_num
+from datetime import timedelta
+
+from matplotlib import colors
+
+from config import *
+from db.camera import get_camera_by_camera_id
+from db.group import get_group_by_group_id
+from db.model import get_model_by_model_id
+from db.result import insert_result
+from db.task_offline import update_offline_task_status_by_id
+from detectors import *
+from utils import is_in_analysis, is_url
+
+
+def run():
+    crop_size: dict = GENERAL_CONFIG['crop']
+    crop_top_y = None if crop_size['top_y'] == 'none' else int(crop_size['top_y'])
+    crop_bottom_y = None if crop_size['bottom_y'] == 'none' else int(crop_size['bottom_y'])
+    crop_left_x = None if crop_size['left_x'] == 'none' else int(crop_size['left_x'])
+    crop_right_x = None if crop_size['right_x'] == 'none' else int(crop_size['right_x'])
+
+    vehicle_det_model = YOLO(GENERAL_CONFIG['pre_trained'])
+    cap_in = cv2.VideoCapture(GENERAL_CONFIG['source'])
+    fps = cap_in.get(cv2.CAP_PROP_FPS)
+    width = int(cap_in.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap_in.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap_out = cv2.VideoWriter(GENERAL_CONFIG['dest'], cv2.VideoWriter.fourcc(*'mp4v'), fps, (width, height))
+
+    volume_detector = VolumeDetector(fps=fps, **VOLUME_CONFIG) if GENERAL_CONFIG['det_volume'] else None
+    velocity_detector = VelocityDetector(fps=fps, **VELOCITY_CONFIG) if GENERAL_CONFIG['det_velocity'] else None
+    polume_detector = PolumeDetector(**POLUME_CONFIG) if GENERAL_CONFIG['det_polume'] else None
+    size_detector = SizeDetector(fps=fps, **SIZE_CONFIG) if GENERAL_CONFIG['det_size'] else None
+    color_classifier = ColorClassifier(**COLOR_CONFIG) if GENERAL_CONFIG['clas_color'] else None
+    pim_detector = PimDetector(fps=fps, **PIM_CONFIG) if GENERAL_CONFIG['det_pim'] else None
+    parking_detector = ParkingDetector(fps=fps, **PARKING_CONFIG) if GENERAL_CONFIG['det_parking'] else None
+    wrongway_detector = WrongwayDetector(fps=fps, **WRONGWAY_CONFIG) if GENERAL_CONFIG['det_wrongway'] else None
+    lanechange_detector = LanechangeDetector(fps=fps, **LANECHANGE_CONFIG) if GENERAL_CONFIG['det_lanechange'] else None
+    speeding_detector = SpeedingDetector(fps=fps, **SPEEDING_CONFIG) if GENERAL_CONFIG['det_speeding'] else None
+
+    stats_height = 30
+    subscript_height = 12
+    px_per_scale = 30
+
+    while cap_in.isOpened():
+        st0 = time()
+
+        ret, frame = cap_in.read()
+        if not ret:
+            break
+
+        stats_line = 0
+        subscript_line = 0
+
+        frame = frame[crop_top_y: crop_bottom_y, crop_left_x: crop_right_x, :]
+
+        st1 = time()
+        result = vehicle_det_model.track(
+            source=frame,
+            imgsz=width,
+            save=False,
+            agnostic_nms=True,
+            persist=True,
+            verbose=False,
+            device=0,
+            # classes=[2, 5, 7]
+            classes=[0, 3]
+        )[0].cpu().numpy()
+        print(f'Model cost: {time() - st1:.3f} ms')
+
+        img = result.plot(conf=False, line_width=1)
+
+        if GENERAL_CONFIG['det_jam']:
+            stats_line += 1
+            ret_jam = detect_jam(result, **JAM_CONFIG)
+            cv2.putText(
+                img,
+                f'Jam: {ret_jam}',
+                (0, stats_height * stats_line),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                stats_height / px_per_scale,
+                (0, 0, 255)
             )
 
-        generate_videos(
-            f'runs/speed',
-            self.__result_buffer,
-            self.__frame_buffer,
-            self.__fps,
-            self.__video_frame_num,
-            self.__output_countdowns,
-            self.__speed_buffer
-        )
+        if GENERAL_CONFIG['det_queue']:
+            stats_line += 1
+            ret_queue = detect_queue(result, **QUEUE_CONFIG)
+            cv2.polylines(img, np.array([QUEUE_CONFIG['det_zone']]), isClosed=True, color=(0, 255, 255), thickness=2)
+            cv2.putText(
+                img,
+                f'Queue: {ret_queue:.2f} m',
+                (0, stats_height * stats_line),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                stats_height / px_per_scale,
+                (0, 255, 255)
+            )
 
-        self.__result_buffer.append(result)
-        self.__frame_buffer.append(frame)
-        self.__speed_buffer.append(texts)
+        if GENERAL_CONFIG['det_density']:
+            stats_line += 1
+            ret_density = detect_density(result, **DENSITY_CONFIG)
+            cv2.polylines(img, np.array([DENSITY_CONFIG['det_zone']]), isClosed=True, color=(0, 255, 255), thickness=2)
+            cv2.putText(
+                img,
+                f'Density: {ret_density:.2f} cars per km',
+                (0, stats_height * stats_line),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                stats_height / px_per_scale,
+                (0, 255, 255)
+            )
 
-        return ret
+        if GENERAL_CONFIG['det_size']:
+            subscript_line += 1
+            ret_size = size_detector.update(result)
+            cv2.line(img, SIZE_CONFIG['vertices'][0], SIZE_CONFIG['vertices'][1], color=(255, 0, 0))
+            for idx in ret_size:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                xyxy = result.boxes.xyxy[retrieve]
+                color = (200, 0, 0) if ret_size[idx] == 'small' else (
+                    (0, 200, 0) if ret_size[idx] == 'medium' else (0, 0, 200)
+                )
+                cv2.putText(
+                    img,
+                    f'{ret_size[idx]}',
+                    (int(xyxy[2]), int(xyxy[1]) + subscript_height * subscript_line),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    subscript_height / px_per_scale,
+                    color
+                )
+
+        if GENERAL_CONFIG['clas_color']:
+            subscript_line += 1
+            ret_color = color_classifier.classify(result, frame)
+            for idx in ret_color:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                xyxy = result.boxes.xyxy[retrieve]
+                color = tuple(map(lambda x: int(x * 255), colors.hex2color(colors.cnames[ret_color[idx]])[::-1]))
+                cv2.putText(
+                    img,
+                    f'{ret_color[idx]}',
+                    (int(xyxy[2]), int(xyxy[1]) + subscript_height * subscript_line),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    subscript_height / px_per_scale,
+                    color
+                )
+
+        if GENERAL_CONFIG['det_volume']:
+            stats_line += 1
+            ret_volume = volume_detector.update(result, frame)
+            cv2.line(img, VOLUME_CONFIG['det_line'][0], VOLUME_CONFIG['det_line'][1], color=(0, 255, 0), thickness=2)
+            # cv2.polylines(img, np.array([VOLUME_CONFIG['det_zone']]), isClosed=True, color=(0, 255, 0), thickness=2)
+            cv2.putText(
+                img,
+                f'Volume: {ret_volume}',
+                (0, stats_height * stats_line),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                stats_height / px_per_scale,
+                (0, 255, 0)
+            )
+
+        if GENERAL_CONFIG['det_velocity']:
+            subscript_line += 1
+            ret_velocity = velocity_detector.update(result, frame)
+            cv2.polylines(img, np.array([VELOCITY_CONFIG['det_zone']]), isClosed=True, color=(255, 255, 0), thickness=2)
+            for idx in ret_velocity:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                xyxy = result.boxes.xyxy[retrieve]
+                cv2.putText(
+                    img,
+                    f'{ret_velocity[idx]:.3f} km/h',
+                    (int(xyxy[2]), int(xyxy[1] + subscript_height * subscript_line)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    subscript_height / px_per_scale,
+                    (255, 255, 0)
+                )
+
+        if GENERAL_CONFIG['det_polume']:
+            stats_line += 1
+            ret_polume = polume_detector.update(result)
+            # cv2.polylines(img, np.array([POLUME_CONFIG['vertices']]), isClosed=True, color=(0, 100, 255), thickness=2)
+            cv2.line(img, SIZE_CONFIG['vertices'][0], SIZE_CONFIG['vertices'][1], color=(255, 0, 0))
+            cv2.putText(
+                img,
+                f'Pedestrian volume: {ret_polume}',
+                (0, stats_height * stats_line),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                stats_height / px_per_scale,
+                (0, 100, 255)
+            )
+
+        if GENERAL_CONFIG['det_pim']:
+            ret_pim = pim_detector.update(result, frame)
+            cv2.polylines(img, np.array([PIM_CONFIG['det_zone']]), isClosed=True, color=(0, 0, 255), thickness=2)
+            for idx in ret_pim:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                xyxy = result.boxes.xyxy[retrieve]
+                tl = (int(xyxy[0]), int(xyxy[1]))
+                br = (int(xyxy[2]), int(xyxy[3]))
+                color = (0, 0, 200) if ret_pim[idx] else (0, 200, 0)
+                cv2.rectangle(img, tl, br, color=color, thickness=2)
+
+        if GENERAL_CONFIG['det_parking']:
+            ret_parking = parking_detector.update(result, frame)
+            cv2.polylines(img, np.array([PARKING_CONFIG['det_zone']]), isClosed=True, color=(0, 0, 255), thickness=2)
+            for idx in ret_parking:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                xyxy = result.boxes.xyxy[retrieve]
+                state = ret_parking[idx]
+                color = (0, 0, 255) if state == 'illegally parked' else (0, 255, 0)  # duplicated for demo
+                text = state if state == 'illegally parked' else ''  # duplicated for demo
+                cv2.putText(
+                    img,
+                    text,
+                    (int(xyxy[0]), int(xyxy[3] + subscript_height)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    subscript_height / px_per_scale,
+                    color
+                )
+
+        if GENERAL_CONFIG['det_wrongway']:
+            subscript_line += 1
+            ret_wrongway = wrongway_detector.update(result, frame)
+            cv2.polylines(img, np.array([WRONGWAY_CONFIG['det_zone']]), isClosed=True, color=(0, 255, 255), thickness=2)
+            for idx in ret_wrongway:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                xywh = result.boxes.xywh[retrieve]
+                xyxy = result.boxes.xyxy[retrieve]
+                vector = ret_wrongway[idx]['vector']
+                wrongway = ret_wrongway[idx]['wrongway']
+                color = (0, 0, 255) if wrongway else (0, 255, 0)
+                cv2.arrowedLine(
+                    img,
+                    (int(xywh[0]), int(xywh[1])),
+                    (int(xywh[0] + 50 * vector[0]), int(xywh[1] + 50 * vector[1])),
+                    color=color
+                )
+                cv2.putText(
+                    img,
+                    'wrong way' if wrongway else 'right way',
+                    (int(xyxy[2]), int(xyxy[1] + subscript_height * subscript_line)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    subscript_height / px_per_scale,
+                    color
+                )
+
+        if GENERAL_CONFIG['det_lanechange']:
+            ret_lanechange = lanechange_detector.update(result, frame)
+            cv2.polylines(img, np.array([LANECHANGE_CONFIG['det_zone']]), True, color=(127, 127, 0), thickness=2)
+            for solid_line in LANECHANGE_CONFIG['solid_lines']:
+                cv2.line(img, solid_line[0], solid_line[1], color=(255, 255, 255), thickness=2)
+            for idx in ret_lanechange:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                xyxy = result.boxes.xyxy[retrieve]
+                lanechange = ret_lanechange[idx]
+                cv2.putText(
+                    img,
+                    'changing' if lanechange else 'staying',
+                    (int(xyxy[0]), int(xyxy[3] + subscript_height)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    subscript_height / px_per_scale,
+                    (0, 0, 255) if lanechange else (0, 255, 0)
+                )
+
+        if GENERAL_CONFIG['det_speeding']:
+            ret_speeding = speeding_detector.update(result, frame)
+            cv2.polylines(img, np.array([SPEEDING_CONFIG['det_zone']]), isClosed=True, color=(255, 255, 0), thickness=2)
+            for idx in ret_speeding:
+                retrieve = np.where(result.boxes.id == idx)[0][0]
+                xyxy = result.boxes.xyxy[retrieve]
+                speeding = ret_speeding[idx]
+                cv2.putText(
+                    img,
+                    'speeding' if speeding else 'not speeding',
+                    (int(xyxy[0]), int(xyxy[3] + subscript_height)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    subscript_height / px_per_scale,
+                    (0, 0, 255) if speeding else (0, 255, 0)
+                )
+
+        print(f'Total cost: {time() - st0:.3f} ms')
+        print('---------------------')
+
+        cap_out.write(img)
+        cv2.imshow('Test', img)
+        if cv2.waitKey(1) >= 0:
+            break
+
+    cap_in.release()
+    cap_out.release()
 
 
-class PolumeDetector:
-    def __init__(
-            self,
-            cls_indices: list,
-            iou_threshold: float
-    ):
-        self.__id_set = set()
-        self.__cls_indices = cls_indices
-        self.__iou_threshold = iou_threshold
+def new_run_offline(
+        task_entry: dict,
+        output_dir: str,
+):
+    group_entry = get_group_by_group_id(task_entry['group_id'])
+    camera_entry = get_camera_by_camera_id(group_entry['camera_id'])
+    model_entry = get_model_by_model_id(group_entry['model_id'])
 
-    def update(
-            self,
-            result: Results
-    ) -> int:
-        vehicle_retrieves = np.where(result.boxes.cls == self.__cls_indices[1])[0]
+    cap_in = cv2.VideoCapture(task_entry['file_url'])
+    fps = cap_in.get(cv2.CAP_PROP_FPS)
+    width = int(cap_in.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap_in.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap_out = cv2.VideoWriter('demo.mp4', cv2.VideoWriter.fourcc(*'mp4v'), fps, (width, height))
 
-        for i, xyxy in enumerate(result.boxes.xyxy):
-            if result.boxes.cls[i] not in self.__cls_indices[0:]:
-                continue
+    det_args = group_entry['args']
 
-            walking = True
+    if not model_entry:
+        print('Model does not exist')
+        update_offline_task_status_by_id(task_entry['id'], -1)
+        return
 
-            for retrieve in vehicle_retrieves:
-                iou = cal_intersection_ratio(xyxy, result.boxes.xyxy[retrieve])
+    elif 'parking' in model_entry['model_name']:
+        detector = ParkingDetector(fps=fps, **det_args)
+        det_model = YOLO(model_entry['file_path'])
 
-                if iou > self.__iou_threshold:
-                    walking = False
-                    break
+    else:
+        print('Unknown error occurred')
+        update_offline_task_status_by_id(task_entry['id'], -1)
+        return
 
-            if walking:
-                self.__id_set.add(result.boxes.id[i])
+    timer = timedelta(seconds=0)
 
-        return len(self.__id_set)
+    while cap_in.isOpened():
+        st0 = time()
 
+        ret, frame = cap_in.read()
+        if not ret:
+            break
 
-def detect_pim(
-        result: Results,
-        cls_indices: list,
-        det_zone: list,
-        iou_threshold=0.6
-) -> dict[int, bool]:
-    ret = {}
+        st1 = time()
 
-    vehicle_retrieves = np.where(result.boxes.cls == cls_indices[1])[0]
+        result = det_model.track(
+            source=frame,
+            imgsz=width,
+            save=False,
+            agnostic_nms=True,
+            persist=True,
+            verbose=False,
+            device=0,
+            classes=det_args['cls_indices']
+        )[0].cpu().numpy()
 
-    for i, xyxy in enumerate(result.boxes.xyxy):
-        if result.boxes.cls[i] not in cls_indices[0:]:
-            continue
+        print(f'Model cost: {time() - st1:.3f} ms')
 
-        walking = True
+        plotted_frame = None
 
-        for retrieve in vehicle_retrieves:
-            iou = cal_intersection_ratio(xyxy, result.boxes.xyxy[retrieve])
+        if is_in_analysis(timer, task_entry['analysis_start_time'], task_entry['analysis_end_time']):
+            det_ret = detector.update(result)
+            plotted_frame = detector.plot(det_ret)
+            dests = detector.output_corpus(output_dir)
 
-            if iou > iou_threshold:
-                walking = False
+            if dests:
+                for dest in dests:
+                    entry = [
+                        model_entry['model_name'],
+                        model_entry['model_version'],
+                        camera_entry['type'],
+                        camera_entry['camera_id'],
+                        is_url(camera_entry['url']),
+                        camera_entry['url'],
+                        dest,
+                        task_entry['analysis_start_time'],  # TODO
+                        task_entry['analysis_end_time'],  # TODO
+                        None,
+                        []  # TODO
+                    ]
+                    insert_result(entry)
+
+        print(f'Total cost: {time() - st0:.3f} ms')
+        print('---------------------')
+
+        timer += timedelta(seconds=1/fps)
+
+        if plotted_frame is not None:
+            cap_out.write(plotted_frame)
+            cv2.imshow('Test', plotted_frame)
+
+            if cv2.waitKey(1) >= 0:
                 break
 
-        if walking:
-            upper = LineString([det_zone[0], det_zone[3]])
-            lower = LineString([det_zone[1], det_zone[2]])
-            line = LineString([(xyxy[0], xyxy[3]), (xyxy[2], xyxy[3])])
-            ret[result.boxes.id[i]] = not (line.intersects(lower) or is_between(line, lower, upper))
+    cap_in.release()
+    cap_out.release()
 
-    return ret
-
-
-class ParkingDetector:
-    def __init__(
-            self,
-            cls_indices: list,
-            det_zone: list,
-            delta_second: float,
-            duration_threshold: float,
-            video_length: float,
-            displacement_threshold: float,
-            fps: float
-    ):
-        self.__id_set = set()
-        self.__cls_indices = cls_indices
-        self.__polygon = Polygon(det_zone)
-        self.__displacement_threshold = displacement_threshold
-        self.__fps = fps
-        self.__delta_frame_num = max(round(delta_second * fps), 1)
-        self.__duration_frame_num = max(round(duration_threshold * fps), 1)
-        self.__video_frame_num = max(round(video_length * fps), 1)
-        self.__result_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__frame_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__parking_counts = {}
-        self.__output_countdowns = {}
-
-    def update(
-            self,
-            result: Results,
-            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray,
-    ) -> dict[int, str]:
-        if result.boxes.id is None:
-            return {}
-
-        if len(self.__result_buffer) == 0:
-            self.__result_buffer.append(result)
-            self.__frame_buffer.append(frame)
-            return {idx: 'unknown' for idx in result.boxes.id}
-
-        ret = {}
-        for i, idx in enumerate(result.boxes.id):
-            if result.boxes.cls[i] not in self.__cls_indices:
-                continue
-
-            state = 'unknown'
-
-            for j, buf in enumerate(self.__result_buffer):
-                if buf.boxes.id is None:
-                    continue
-
-                retrieve = np.where(buf.boxes.id == idx)[0]
-
-                if retrieve.shape[0] >= 1:
-                    list_idx = retrieve[0]
-                    prev_point = buf.boxes.xywh[list_idx][:2]
-                    curr_point = result.boxes.xywh[i][:2]
-
-                    motion_vector = curr_point - prev_point
-                    displacement = np.linalg.norm(motion_vector)
-
-                    if displacement < self.__displacement_threshold:
-                        center = Point(result.boxes.xywh[i][:2])
-
-                        if self.__polygon.contains(center):
-                            state = 'illegally parked'
-                        else:
-                            state = 'legally parked'
-
-                    else:
-                        state = 'moving'
-
-                    break
-
-            ret[idx] = state
-
-            update_counts(
-                state,
-                'illegally parked',
-                idx,
-                self.__parking_counts,
-                self.__output_countdowns,
-                self.__duration_frame_num,
-                self.__video_frame_num
-            )
-
-        generate_videos(
-            f'runs/parking',
-            self.__result_buffer,
-            self.__frame_buffer,
-            self.__fps,
-            self.__video_frame_num,
-            self.__output_countdowns
-        )
-
-        self.__result_buffer.append(result)
-        self.__frame_buffer.append(frame)
-
-        return ret
-
-
-class WrongwayDetector:
-    def __init__(
-            self,
-            cls_indices: list,
-            det_zone: list,
-            delta_second: float,
-            duration_threshold: float,
-            video_length: float,
-            fps: float,
-            correct_way='up'
-    ):
-        self.__id_set = set()
-        self.__cls_indices = cls_indices
-        self.__polygon = Polygon(det_zone)
-        self.__fps = fps
-        self.__correct_way = correct_way
-        self.__delta_frame_num = max(round(delta_second * fps), 1)
-        self.__duration_frame_num = max(round(duration_threshold * fps), 1)
-        self.__video_frame_num = max(round(video_length * fps), 1)
-        self.__result_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__frame_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__wrongway_counts = {}
-        self.__output_countdowns = {}
-
-    def update(
-            self,
-            result: Results,
-            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray,
-    ) -> dict[int, dict]:
-        if result.boxes.id is None:
-            return {}
-
-        if len(self.__result_buffer) == 0:
-            self.__result_buffer.append(result)
-            self.__frame_buffer.append(frame)
-            return {idx: {'vector': [0., 0.], 'wrongway': False} for idx in result.boxes.id}
-
-        ret = {}
-        for i, idx in enumerate(result.boxes.id):
-            center = Point(result.boxes.xywh[i][:2])
-            if result.boxes.cls[i] not in self.__cls_indices or not self.__polygon.contains(center):
-                continue
-
-            motion_vector = [0., 0.]
-
-            for j, buf in enumerate(self.__result_buffer):
-                if buf.boxes.id is None:
-                    continue
-
-                retrieve = np.where(buf.boxes.id == idx)[0]
-
-                if retrieve.shape[0] >= 1:
-                    list_idx = retrieve[0]
-                    prev_point = buf.boxes.xywh[list_idx][:2]
-                    curr_point = result.boxes.xywh[i][:2]
-
-                    motion_vector = curr_point - prev_point
-                    norm = np.linalg.norm(motion_vector)
-                    motion_vector /= norm
-                    motion_vector = list(motion_vector)
-                    break
-
-            wrongway = self.__is_wrongway(motion_vector)
-            ret[idx] = {'vector': motion_vector, 'wrongway': wrongway}
-
-            update_counts(
-                wrongway,
-                True,
-                idx,
-                self.__wrongway_counts,
-                self.__output_countdowns,
-                self.__duration_frame_num,
-                self.__video_frame_num
-            )
-
-        generate_videos(
-            f'runs/wrongway',
-            self.__result_buffer,
-            self.__frame_buffer,
-            self.__fps,
-            self.__video_frame_num,
-            self.__output_countdowns
-        )
-
-        self.__result_buffer.append(result)
-        self.__frame_buffer.append(frame)
-
-        return ret
-
-    def __is_wrongway(self, motion_vector: list[float]) -> bool:
-        if self.__correct_way == 'up':
-            return motion_vector[1] > 0
-        elif self.__correct_way == 'down':
-            return motion_vector[1] < 0
-        elif self.__correct_way == 'left':
-            return motion_vector[0] < 0
-        elif self.__correct_way == 'right':
-            return motion_vector[0] > 0
-        else:
-            return False
-
-
-class LanechangeDetector:
-    def __init__(
-            self,
-            cls_indices: list,
-            det_zone: list,
-            delta_second: float,
-            duration_threshold: float,
-            video_length: float,
-            solid_lines: list,
-            fps: float
-    ):
-        self.__id_set = set()
-        self.__cls_indices = cls_indices
-        self.__polygon = Polygon(det_zone)
-        self.__fps = fps
-        self.__delta_frame_num = max(round(delta_second * fps), 1)
-        self.__duration_frame_num = max(round(duration_threshold * fps), 1)
-        self.__video_frame_num = max(round(video_length * fps), 1)
-        self.__result_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__frame_buffer = deque(maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__solid_lines = [LineString(solid_line) for solid_line in solid_lines]
-        self.__lanechange_counts = {}  # {id: count}
-        self.__output_countdowns = {}
-
-    def update(
-            self,
-            result: Results,
-            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray
-    ) -> dict[int, bool]:
-        if result.boxes.id is None:
-            return {}
-
-        if len(self.__result_buffer) == 0:
-            self.__result_buffer.append(result)
-            self.__frame_buffer.append(frame)
-            return {idx: False for idx in result.boxes.id}
-
-        ret = {}
-        for i, idx in enumerate(result.boxes.id):
-            center = Point(result.boxes.xywh[i][:2])
-            if result.boxes.cls[i] not in self.__cls_indices or not self.__polygon.contains(center):
-                continue
-
-            lanechange = False
-
-            for j, buf in enumerate(list(self.__result_buffer)[-self.__delta_frame_num:]):
-                if buf.boxes.id is None:
-                    continue
-
-                retrieve = np.where(buf.boxes.id == idx)[0]
-
-                if retrieve.shape[0] >= 1:
-                    list_idx = retrieve[0]
-                    prev_point = buf.boxes.xywh[list_idx][:2]
-                    next_point = 2 * result.boxes.xywh[i][:2] - prev_point
-
-                    track = LineString([prev_point, next_point])
-                    for solid_line in self.__solid_lines:
-                        if solid_line.intersects(track):
-                            lanechange = True
-                            break
-
-                    break
-
-            ret[idx] = lanechange
-
-            update_counts(
-                lanechange,
-                True,
-                idx,
-                self.__lanechange_counts,
-                self.__output_countdowns,
-                self.__duration_frame_num,
-                self.__video_frame_num
-            )
-
-        generate_videos(
-            f'runs/lanechange',
-            self.__result_buffer,
-            self.__frame_buffer,
-            self.__fps,
-            self.__video_frame_num,
-            self.__output_countdowns
-        )
-
-        self.__result_buffer.append(result)
-        self.__frame_buffer.append(frame)
-
-        return ret
+    update_offline_task_status_by_id(task_entry['id'], 1)

@@ -1,6 +1,8 @@
 import glob
+import hashlib
 import math
 import re
+from datetime import timedelta
 from pathlib import Path
 from threading import Thread
 from typing import Sequence, Any
@@ -10,6 +12,7 @@ import numpy as np
 import sympy as sp
 from shapely.geometry.linestring import LineString
 from shapely.geometry.point import Point
+from ultralytics.engine.results import Results
 
 
 def cal_intersection_points(
@@ -121,7 +124,7 @@ def increment_path(dst_path: str, exist_ok=False, sep='', mkdir=False):
     return str(dst_path)
 
 
-def generate_video(
+def assemble_frames(
         dst_name: str,
         frames: Sequence[cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray],
         fps: float
@@ -142,7 +145,44 @@ def generate_video(
     cap_out.release()
 
 
-def generate_videos(
+def generate_video_generally(
+        dst_name: str,
+        frame_buffer: Sequence[cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray],
+        fps: float,
+        vertices: list = None,
+        texts: Sequence | None = None,
+        color: Sequence[float] = None
+):
+    frames_to_write = []
+    for i, buffered_frame in enumerate(frame_buffer):
+        frame_copy = buffered_frame.copy()
+
+        if len(vertices) >= 4:
+            cv2.polylines(frame_copy, np.array(vertices), isClosed=True, color=color, thickness=2)
+        elif len(vertices) >= 2:
+            cv2.line(frame_copy, vertices[0], vertices[1], color=color, thickness=2)
+
+        if texts:
+            cv2.putText(
+                frame_copy,
+                texts[i],
+                (0, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                color
+            )
+
+        frames_to_write.append(frame_copy)
+
+    Thread(
+        target=assemble_frames,
+        args=(dst_name + '.mp4', frames_to_write, fps),
+        daemon=True
+    ).start()
+    pass
+
+
+def generate_videos_respectively(
         dst_name: str,
         result_buffer: Sequence,
         frame_buffer: Sequence[cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray],
@@ -150,7 +190,7 @@ def generate_videos(
         frame_num: int,
         countdowns: dict,
         text_buffer: Sequence[dict] | None = None
-) -> dict:
+):
     for idx in list(countdowns.keys()):
         countdowns[idx] -= 1
 
@@ -180,27 +220,81 @@ def generate_videos(
                         thickness=2
                     )
 
-                    # TODO bug
-                    texts = text_buffer[k]
-                    if texts:
-                        cv2.putText(
-                            frame_copy,
-                            texts[idx],
-                            (int(xyxy[2]), int(xyxy[1] + 12)),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            .4,
-                            (0, 0, 255)
-                        )
+                    if text_buffer:
+                        texts = text_buffer[k - min(frame_num, len(text_buffer))]
+
+                        if texts and texts.get(idx):
+                            cv2.putText(
+                                frame_copy,
+                                texts[idx],
+                                (int(xyxy[2]), int(xyxy[1] + 12)),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                .4,
+                                (0, 0, 255)
+                            )
 
                 frames_to_write.append(frame_copy)
 
             Thread(
-                target=generate_video,
+                target=assemble_frames,
                 args=(dst_name + f'{str(int(idx)).zfill(7)}.mp4', frames_to_write, fps),
                 daemon=True
             ).start()
 
-    return countdowns
+
+def generate_video(
+        dest_path: str,
+        idx,
+        result_buffer: Sequence[Results],
+        fps: float,
+        frame_num: int,
+        text_buffer: Sequence[dict] | None = None
+):
+    frame_buffer = [r.orig_img for r in list(result_buffer)]
+    frames_to_write = []
+
+    for k, buffered_frame in enumerate(frame_buffer[-frame_num:]):
+        frame_copy = buffered_frame.copy()
+        buffered_result = result_buffer[k - min(frame_num, len(result_buffer))]
+
+        if buffered_result.boxes.id is None:
+            continue
+
+        retrieve = np.where(buffered_result.boxes.id == idx)[0]
+
+        if retrieve.shape[0] >= 1:
+            list_idx = retrieve[0]
+
+            xyxy = buffered_result.boxes.xyxy[list_idx]
+
+            cv2.rectangle(
+                frame_copy,
+                (int(xyxy[0]), int(xyxy[1])),
+                (int(xyxy[2]), int(xyxy[3])),
+                (0, 0, 255),
+                thickness=2
+            )
+
+            if text_buffer:
+                texts = text_buffer[k - min(frame_num, len(text_buffer))]
+
+                if texts and texts.get(idx):
+                    cv2.putText(
+                        frame_copy,
+                        texts[idx],
+                        (int(xyxy[2]), int(xyxy[1] + 12)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        .4,
+                        (0, 0, 255)
+                    )
+
+        frames_to_write.append(frame_copy)
+
+    Thread(
+        target=assemble_frames,
+        args=(dest_path, frames_to_write, fps),
+        daemon=True
+    ).start()
 
 
 def update_counts(
@@ -225,3 +319,28 @@ def update_counts(
     else:
         if idx in counts:
             del counts[idx]
+
+
+def generate_hash20(string: str) -> str:
+    hash_object = hashlib.sha256(string.encode())
+    hex_dig = hash_object.hexdigest()
+
+    return hex_dig[:20]
+
+
+def is_url(string: str) -> bool:
+    return string.lower().startswith('rtsp://')
+
+
+def is_in_analysis(curr_time: timedelta, start_time: timedelta | None, end_time: timedelta | None) -> bool:
+    if not start_time and not end_time:
+        return True
+
+    elif not start_time:
+        return curr_time <= end_time
+
+    elif not end_time:
+        return curr_time >= start_time
+
+    else:
+        return start_time <= curr_time <= end_time
