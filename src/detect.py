@@ -12,7 +12,7 @@ from detectors import *
 from utils import is_in_analysis, is_url
 
 
-def run():
+def old_run():
     crop_size: dict = GENERAL_CONFIG['crop']
     crop_top_y = None if crop_size['top_y'] == 'none' else int(crop_size['top_y'])
     crop_bottom_y = None if crop_size['bottom_y'] == 'none' else int(crop_size['bottom_y'])
@@ -287,9 +287,9 @@ def run():
     cap_out.release()
 
 
-def new_run_offline(
+def run_offline(
         task_entry: dict,
-        output_dir: str,
+        output_dir: str
 ):
     group_entry = get_group_by_group_id(task_entry['group_id'])
     camera_entry = get_camera_by_camera_id(group_entry['camera_id'])
@@ -350,6 +350,9 @@ def new_run_offline(
 
             if dests:
                 for dest in dests:
+                    td_duration_threshold = timedelta(seconds=det_args['duration_threshold'])
+                    td_half_diff = timedelta(seconds=max((det_args['video_length'] - det_args['duration_threshold']) // 2, 0))
+
                     entry = [
                         model_entry['model_name'],
                         model_entry['model_version'],
@@ -358,8 +361,8 @@ def new_run_offline(
                         is_url(camera_entry['url']),
                         camera_entry['url'],
                         dest,
-                        task_entry['analysis_start_time'],  # TODO
-                        task_entry['analysis_end_time'],  # TODO
+                        timer - td_half_diff - td_duration_threshold,
+                        timer - td_half_diff,
                         None,
                         []  # TODO
                     ]
@@ -372,10 +375,9 @@ def new_run_offline(
 
         if plotted_frame is not None:
             cap_out.write(plotted_frame)
-            cv2.imshow('Test', plotted_frame)
-
-            if cv2.waitKey(1) >= 0:
-                break
+            # cv2.imshow('Test', plotted_frame)
+            # if cv2.waitKey(1) >= 0:
+            #     break
 
     cap_in.release()
     cap_out.release()

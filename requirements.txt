@@ -3,6 +3,7 @@ mysql-connector-python == 9.0.0
 numpy
 opencv-python
 pillow
+pyqt6
 pyyaml
 scikit-learn
 sympy

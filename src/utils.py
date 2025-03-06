@@ -313,7 +313,8 @@ def update_counts(
             counts[idx] = 1
     
         if idx in counts and counts[idx] >= duration_frame_num:
-            countdowns[idx] = video_frame_num // 2
+            # countdowns[idx] = video_frame_num // 2
+            countdowns[idx] = max((video_frame_num - duration_frame_num) // 2, 0)
             del counts[idx]
     
     else:

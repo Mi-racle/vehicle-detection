@@ -1,9 +1,13 @@
 import logging
 import os
+import sys
 from datetime import datetime
 
+import cv2
+from PyQt6.QtWidgets import QApplication
+
 from db.task_offline import get_next_offline_task
-from detect import new_run_offline
+from ui.main_window import MainWindow
 
 
 def init_log(dir_name: str):
@@ -30,12 +34,21 @@ def init_log(dir_name: str):
 
 if __name__ == '__main__':
     init_log('logs')
-    # run()
+
+    app = QApplication(sys.argv)
+    window = MainWindow()
 
     while True:
-        task = get_next_offline_task()
+        if not window.is_alive():
+            window.destroy()
 
-        if not task:
-            break
+            task = get_next_offline_task()
+            if not task:
+                break
 
-        new_run_offline(task, 'runs')
+            window.show()
+            window.run_offline(task, 'runs')
+
+        cv2.waitKey(1000)
+
+    sys.exit(app.exec())
