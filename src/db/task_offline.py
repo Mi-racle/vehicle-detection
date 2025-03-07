@@ -1,3 +1,4 @@
+import json
 import logging
 
 import mysql.connector
@@ -50,7 +51,10 @@ def get_next_offline_task():
             cursor.execute(query)
             logging.info(f'Entry successfully selected from {table}')
 
-            return cursor.fetchone()
+            task = cursor.fetchone()
+            task['group_id'] = json.loads(task['group_id'])
+
+            return task
 
     except Error as e:
         connection = None

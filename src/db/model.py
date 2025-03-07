@@ -23,7 +23,7 @@ def get_model_by_model_id(model_id: int):
             logging.info(f'Entry successfully selected from {table}')
 
             camera = cursor.fetchone()
-            camera['example'] = json.loads(camera['arg_example'])
+            camera['arg_example'] = json.loads(camera['arg_example'])
 
             return camera
 

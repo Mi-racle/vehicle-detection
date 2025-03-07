@@ -9,7 +9,7 @@ from db.model import get_model_by_model_id
 from db.result import insert_result
 from db.task_offline import update_offline_task_status_by_id
 from detectors import *
-from utils import is_in_analysis, is_url
+from utils import is_in_analysis, get_url_type
 
 
 def old_run():
@@ -358,7 +358,7 @@ def run_offline(
                         model_entry['model_version'],
                         camera_entry['type'],
                         camera_entry['camera_id'],
-                        is_url(camera_entry['url']),
+                        get_url_type(camera_entry['url']),
                         camera_entry['url'],
                         dest,
                         timer - td_half_diff - td_duration_threshold,

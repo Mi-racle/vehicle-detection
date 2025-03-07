@@ -594,8 +594,7 @@ class ParkingDetector:
 
     def update(
             self,
-            result: Results,
-            # frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray,
+            result: Results
     ) -> dict[float, str]:
         self.__result_buffer.append(result)
 
@@ -607,7 +606,7 @@ class ParkingDetector:
 
         ret = {}
         for i, idx in enumerate(result.boxes.id):
-            if result.boxes.cls[i] not in self.__cls_indices:
+            if idx in self.__id_set or result.boxes.cls[i] not in self.__cls_indices:
                 continue
 
             state = 'unknown'
@@ -656,8 +655,13 @@ class ParkingDetector:
     def plot(
             self,
             states: dict[float, str],
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None
     ) -> cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray:
         result = deepcopy(self.__result_buffer[-1])
+
+        if frame is not None:
+            result.orig_img = frame
+
         img = result.plot(conf=False, line_width=1)
 
         cv2.polylines(img, np.array([self.__noparking_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
@@ -686,8 +690,9 @@ class ParkingDetector:
 
             if self.__output_countdowns[idx] <= 0:
                 del self.__output_countdowns[idx]
+                self.__id_set.add(idx)
 
-                dest = generate_hash20(f'parking{idx}{time()}')
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
                 dests.append(dest)
 
                 generate_video(
@@ -710,30 +715,26 @@ class WrongwayDetector:
             duration_threshold: float,
             video_length: float,
             fps: float,
-            correct_way='up'
+            valid_direction='up'
     ):
-        self.__id_set = set()
         self.__cls_indices = cls_indices
-        self.__polygon = Polygon(det_zone)
+        self.__det_zone = det_zone
         self.__fps = fps
-        self.__correct_way = correct_way
+        self.__valid_direction = valid_direction
         self.__delta_frame_num = max(round(delta_second * fps), 1)
         self.__duration_frame_num = max(round(duration_threshold * fps), 1)
         self.__video_frame_num = max(round(video_length * fps), 1)
         self.__result_buffer = deque(
             maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__frame_buffer = deque(
-            maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
+        self.__id_set = set()
         self.__wrongway_counts = {}
         self.__output_countdowns = {}
 
     def update(
             self,
-            result: Results,
-            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray,
-    ) -> dict[int, dict]:
+            result: Results
+    ) -> dict[float, dict]:
         self.__result_buffer.append(result)
-        self.__frame_buffer.append(frame)
 
         if result.boxes.id is None:
             return {}
@@ -743,8 +744,11 @@ class WrongwayDetector:
 
         ret = {}
         for i, idx in enumerate(result.boxes.id):
-            center = Point(result.boxes.xywh[i][:2])
-            if result.boxes.cls[i] not in self.__cls_indices or not self.__polygon.contains(center):
+            if (
+                    idx in self.__id_set or
+                    result.boxes.cls[i] not in self.__cls_indices or
+                    not Polygon(self.__det_zone).contains(Point(result.boxes.xywh[i][:2]))
+            ):
                 continue
 
             motion_vector = [0., 0.]
@@ -779,25 +783,78 @@ class WrongwayDetector:
                 self.__video_frame_num
             )
 
-        generate_videos_respectively(
-            f'runs/wrongway',
-            self.__result_buffer,
-            self.__frame_buffer,
-            self.__fps,
-            self.__video_frame_num,
-            self.__output_countdowns
-        )
-
         return ret
 
+    def plot(
+            self,
+            states: dict[float, dict],
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None
+    ) -> cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray:
+        result = deepcopy(self.__result_buffer[-1])
+
+        if frame is not None:
+            result.orig_img = frame
+
+        img = result.plot(conf=False, line_width=1)
+
+        cv2.polylines(img, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
+
+        for idx in states:
+            retrieve = np.where(result.boxes.id == idx)[0][0]
+            xyxy = result.boxes.xyxy[retrieve]
+            state = states[idx]
+            wrongway = state['wrongway']
+            color = (0, 0, 255) if wrongway else (0, 255, 0)
+            cv2.putText(
+                img,
+                'wrong way' if wrongway else 'right way',
+                (int(xyxy[2]), int(xyxy[3])),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                .4,
+                color
+            )
+            # xywh = result.boxes.xywh[retrieve]
+            # vector = state['vector']
+            # cv2.arrowedLine(
+            #     img,
+            #     (int(xywh[0]), int(xywh[1])),
+            #     (int(xywh[0] + 50 * vector[0]), int(xywh[1] + 50 * vector[1])),
+            #     color=color
+            # )
+
+        return img
+
+    def output_corpus(self, output_dir: str) -> list[str]:
+        dests = []
+
+        for idx in list(self.__output_countdowns.keys()):
+            self.__output_countdowns[idx] -= 1
+
+            if self.__output_countdowns[idx] <= 0:
+                del self.__output_countdowns[idx]
+                self.__id_set.add(idx)
+
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+                dests.append(dest)
+
+                generate_video(
+                    f'{output_dir}/{dest}.mp4',
+                    idx,
+                    self.__result_buffer,
+                    self.__fps,
+                    self.__video_frame_num
+                )
+
+        return dests
+
     def __is_wrongway(self, motion_vector: list[float]) -> bool:
-        if self.__correct_way == 'up':
+        if self.__valid_direction == 'up':
             return motion_vector[1] > 0
-        elif self.__correct_way == 'down':
+        elif self.__valid_direction == 'down':
             return motion_vector[1] < 0
-        elif self.__correct_way == 'left':
+        elif self.__valid_direction == 'left':
             return motion_vector[0] < 0
-        elif self.__correct_way == 'right':
+        elif self.__valid_direction == 'right':
             return motion_vector[0] > 0
         else:
             return False

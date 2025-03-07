@@ -5,6 +5,7 @@ import numpy as np
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QTableWidget, QHeaderView, QTableWidgetItem, QVBoxLayout, QComboBox, \
     QLabel
 
+from db.result import get_result_header
 from ui.image_label import ImageLabel
 
 
@@ -52,6 +53,7 @@ class DisplayWindow(QWidget):
         self.setLayout(layout)
 
         self.infos = []
+        self.fields = get_result_header()[1:]
 
     def set_image(self, frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray):
         self.image_label.set_umat(frame)
@@ -64,20 +66,6 @@ class DisplayWindow(QWidget):
     def update_table(self):
         info = self.infos[self.object_combobox.currentIndex()]
 
-        fields = [
-            'model_name',
-            'model_version',
-            'camera_type',
-            'camera_id',
-            'video_url',
-            'source',
-            'dest',
-            'start_time',
-            'end_time',
-            'plate_no',
-            'locations'
-        ]
-
-        for i, pair in enumerate(zip(fields, info)):
+        for i, pair in enumerate(zip(self.fields, info)):
             self.info_table.setItem(i, 0, QTableWidgetItem(str(pair[0])))
             self.info_table.setItem(i, 1, QTableWidgetItem(str(pair[1])))

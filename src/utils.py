@@ -329,8 +329,8 @@ def generate_hash20(string: str) -> str:
     return hex_dig[:20]
 
 
-def is_url(string: str) -> bool:
-    return string.lower().startswith('rtsp://')
+def get_url_type(string: str) -> int:
+    return 1 if string.lower().startswith('rtsp://') else 0
 
 
 def is_in_analysis(curr_time: timedelta, start_time: timedelta | None, end_time: timedelta | None) -> bool:

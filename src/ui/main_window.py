@@ -1,9 +1,11 @@
 import ctypes
+import logging
 import sys
 import threading
 from datetime import timedelta
 from threading import Thread
-from time import time
+from time import time, sleep
+from typing import Any
 
 import cv2
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
@@ -14,9 +16,9 @@ from db.group import get_group_by_group_id
 from db.model import get_model_by_model_id
 from db.result import insert_result
 from db.task_offline import update_offline_task_status_by_id
-from detectors import ParkingDetector
+from detectors import ParkingDetector, WrongwayDetector
 from ui.display_window import DisplayWindow
-from utils import is_in_analysis, is_url
+from utils import is_in_analysis, get_url_type
 
 
 class MainWindow(QMainWindow):
@@ -53,31 +55,54 @@ class MainWindow(QMainWindow):
             task_entry: dict,
             output_dir: str
     ):
-        group_entry = get_group_by_group_id(task_entry['group_id'])
-        camera_entry = get_camera_by_camera_id(group_entry['camera_id'])
-        model_entry = get_model_by_model_id(group_entry['model_id'])
-
         cap_in = cv2.VideoCapture(task_entry['file_url'])
         fps = cap_in.get(cv2.CAP_PROP_FPS)
+
+        det_models: dict[str, dict[str, Any]] = {}
+        detectors = {}  # {'group_id': Detector}
+        camera_entries = {}  # {'group_id': camera_entry}
+        model_entries = {}  # {'group_id': model_entry}
+
+        for group_id in task_entry['group_id']:
+            group_entry = get_group_by_group_id(group_id)
+
+            camera_entry = get_camera_by_camera_id(group_entry['camera_id'])
+            model_entry = get_model_by_model_id(group_entry['model_id'])
+            det_args = group_entry['args']
+
+            camera_entries[group_id] = camera_entry
+            model_entries[group_id] = model_entry
+
+            if model_entry['file_path'] not in det_models.keys():
+                det_models[model_entry['file_path']] = {
+                    'model': YOLO(model_entry['file_path']),  # TODO
+                    'groups': [group_id],
+                    'classes': det_args['cls_indices'] if det_args.get('cls_indices') else None
+                }
+            else:
+                det_models[model_entry['file_path']]['groups'].append(group_id)
+                if det_args.get('cls_indices'):
+                    classes = det_models[model_entry['file_path']]['classes']
+                    det_models[model_entry['file_path']]['classes'] = list(set(classes + det_args['cls_indices']))
+
+            if not model_entry:
+                logging.info('Model does not exist')
+                update_offline_task_status_by_id(task_entry['id'], -1)
+                cap_in.release()
+                return
+            elif 'parking' in model_entry['model_name'].lower():
+                detectors[group_id] = ParkingDetector(fps=fps, **det_args)
+            elif 'wrongway' in model_entry['model_name'].lower():
+                detectors[group_id] = WrongwayDetector(fps=fps, **det_args)
+            else:
+                logging.info('Unknown error occurred')
+                update_offline_task_status_by_id(task_entry['id'], -1)
+                cap_in.release()
+                return
+
         width = int(cap_in.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap_in.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap_out = cv2.VideoWriter('demo.mp4', cv2.VideoWriter.fourcc(*'mp4v'), fps, (width, height))
-
-        det_args = group_entry['args']
-
-        if not model_entry:
-            print('Model does not exist')
-            update_offline_task_status_by_id(task_entry['id'], -1)
-            return
-
-        elif 'parking' in model_entry['model_name']:
-            detector = ParkingDetector(fps=fps, **det_args)
-            det_model = YOLO(model_entry['file_path'])
-
-        else:
-            print('Unknown error occurred')
-            update_offline_task_status_by_id(task_entry['id'], -1)
-            return
 
         def detect():
             end_as_designed = False
@@ -93,39 +118,57 @@ class MainWindow(QMainWindow):
 
                 st1 = time()
 
-                result = det_model.track(
-                    source=frame,
-                    imgsz=width,
-                    save=False,
-                    agnostic_nms=True,
-                    persist=True,
-                    verbose=False,
-                    device=0,
-                    classes=det_args['cls_indices']
-                )[0].cpu().numpy()
-
-                print(f'Model cost: {time() - st1:.3f} ms')
-
-                plotted_frame = None
+                plotted_frame = frame.copy()
 
                 if is_in_analysis(timer, task_entry['analysis_start_time'], task_entry['analysis_end_time']):
-                    det_ret = detector.update(result)
-                    plotted_frame = detector.plot(det_ret)
-                    dests = detector.output_corpus(output_dir)
+                    results = {}  # {group_id: result}
 
-                    if dests:
+                    for values in det_models.values():
+                        det_model = values['model']
+
+                        if isinstance(det_model, YOLO):
+                            result = det_model.track(
+                                source=frame,
+                                imgsz=width,
+                                save=False,
+                                agnostic_nms=True,
+                                persist=True,
+                                verbose=False,
+                                device=0,
+                                classes=values['classes']
+                            )[0].cpu().numpy()
+                        else:  # TODO OCR
+                            result = None
+
+                        for group in values['groups']:
+                            results[group] = result
+
+                    print(f'Model cost: {time() - st1:.3f} s')
+
+                    for group in detectors:
+                        detector = detectors[group]
+                        camera = camera_entries[group]
+                        model = model_entries[group]
+
+                        det_ret = detector.update(results[group])
+                        plotted_frame = detector.plot(det_ret, plotted_frame)
+                        dests = detector.output_corpus(output_dir)
+
+                        if not dests:
+                            continue
+
                         for dest in dests:
                             td_duration_threshold = timedelta(seconds=det_args['duration_threshold'])
                             td_half_diff = timedelta(
                                 seconds=max((det_args['video_length'] - det_args['duration_threshold']) // 2, 0))
 
                             entry = [
-                                model_entry['model_name'],
-                                model_entry['model_version'],
-                                camera_entry['type'],
-                                camera_entry['camera_id'],
-                                is_url(camera_entry['url']),
-                                camera_entry['url'],
+                                model['model_name'],
+                                model['model_version'],
+                                camera['type'],
+                                camera['camera_id'],
+                                get_url_type(camera['url']),
+                                camera['url'],
                                 dest,
                                 timer - td_half_diff - td_duration_threshold,
                                 timer - td_half_diff,
@@ -135,18 +178,17 @@ class MainWindow(QMainWindow):
                             self.display_window.add_info(entry)
                             insert_result(entry)
 
-                print(f'Total cost: {time() - st0:.3f} ms')
-                print('---------------------')
+                cap_out.write(plotted_frame)
+                self.display_window.set_image(plotted_frame)
 
                 timer += timedelta(seconds=1 / fps)
 
-                if plotted_frame is not None:
-                    cap_out.write(plotted_frame)
-                    self.display_window.set_image(plotted_frame)
+                total_cost = time() - st0
 
-                else:
-                    cap_out.write(frame)
-                    self.display_window.set_image(frame)
+                print(f'Total cost: {total_cost:.3f} s')
+                print('---------------------')
+
+                sleep(max(1 / fps - total_cost, 0))
 
             cap_in.release()
             cap_out.release()
