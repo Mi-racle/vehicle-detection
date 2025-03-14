@@ -1,5 +1,13 @@
+# MySQL
 host: localhost
 port: 3306
-database: traffic
+database: db_banma_traffic_analysis
 user: root
 password: "123456"
+
+# TiDB
+#host: 192.168.1.185
+#port: 4000
+#database: db_banma_traffic_analysis
+#user: root
+#password: "JL@8jsam"

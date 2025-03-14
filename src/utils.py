@@ -146,14 +146,16 @@ def assemble_frames(
 
 
 def generate_video_generally(
-        dst_name: str,
-        frame_buffer: Sequence[cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray],
+        dst_path: str,
+        result_buffer: Sequence[Results],
         fps: float,
         vertices: list = None,
         texts: Sequence | None = None,
         color: Sequence[float] = None
 ):
+    frame_buffer = [r.orig_img for r in list(result_buffer)]
     frames_to_write = []
+
     for i, buffered_frame in enumerate(frame_buffer):
         frame_copy = buffered_frame.copy()
 
@@ -176,10 +178,9 @@ def generate_video_generally(
 
     Thread(
         target=assemble_frames,
-        args=(dst_name + '.mp4', frames_to_write, fps),
+        args=(dst_path, frames_to_write, fps),
         daemon=True
     ).start()
-    pass
 
 
 def generate_videos_respectively(
@@ -285,7 +286,7 @@ def generate_video(
                         (int(xyxy[2]), int(xyxy[1] + 12)),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         .4,
-                        (0, 0, 255)
+                        (0, 255, 0)
                     )
 
         frames_to_write.append(frame_copy)

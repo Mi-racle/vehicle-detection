@@ -30,9 +30,9 @@ general_args: {
   det_density: false,
   det_size: false,
   clas_color: false,
-  det_volume: false,
+  det_section: false,
   det_velocity: false,
-  det_polume: false,  # Pedestrian volume
+  det_volume: false,  # Volume of cars waiting for green light
   det_pim: true,  # Pedestrian Into Motor
   det_parking: false,  # Illegal parking
   det_wrongway: false,  # Driving wrong way
@@ -69,22 +69,22 @@ color_args: {
   resize: [ 224, 224 ],
   min_size: [ 96, 96 ]
 }
-volume_args: {
+section_args: {
   cls_indices: [ 2, 3, 5, 7 ],
   det_line: [ [ 339, 215 ], [ 1060, 215 ] ],
   video_length: 10.0
 }
 velocity_args: {
-  cls_indices: [ 2, 3, 5, 7 ],
+  cls_indices: [ 2, 5, 7 ],
   det_zone: [ [ 567, 34 ], [ 109, 546 ], [ 1278, 546 ], [ 770, 34 ] ],
   lengths_m: [ 60, 20, 60, 20 ],
   angle: 90,
   delta_second: 0.4,
-  duration_threshold: 1.0,
   video_length: 2.0
 }
-polume_args: {
-  cls_indices: [ 0, 3 ],
+volume_args: {
+  cls_indices: [ 2, 5, 7 ],
+  det_zone: [ [ 500, 1180 ], [ 0, 1620 ], [ 0, 2159 ], [ 3600, 2159 ], [ 2660, 1126 ] ],
   iou_threshold: 0.6
 }
 pim_args: {

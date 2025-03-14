@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 import sys
@@ -33,21 +34,24 @@ def init_log(dir_name: str):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-i', type=int, default=2)
+    args = parser.parse_args()
+
     init_log('logs')
 
     app = QApplication(sys.argv)
     window = MainWindow()
 
+    task = TASK_OFFLINE_DAO.get_offline_task_by_id(args.i)
+
+    window.show()
+    window.run_offline(task, 'runs')
+
     while True:
         if not window.is_alive():
             window.destroy()
-
-            task = TASK_OFFLINE_DAO.get_next_offline_task()
-            if not task:
-                break
-
-            window.show()
-            window.run_offline(task, 'runs')
+            break
 
         cv2.waitKey(1000)
 

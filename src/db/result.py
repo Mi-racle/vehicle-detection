@@ -1,19 +1,31 @@
 import logging
 
 import mysql.connector
+import yaml
 from mysql.connector import Error
 
-from db.db_config import DB_CONFIG
 
+class TblResultDAO:
+    def __init__(self, config_path: str):
+        self.config_path = config_path
+        self.connection = mysql.connector.connect(
+            **yaml.safe_load(open(self.config_path, 'r'))
+        )
 
-def insert_result(result):
-    connection = None
-    cursor = None
+    def __del__(self):
+        if self.connection and self.connection.is_connected():
+            self.connection.close()
 
-    try:
-        connection = mysql.connector.connect(**DB_CONFIG, buffered=True)
-        if connection.is_connected():
-            cursor = connection.cursor(dictionary=True)
+    def insert_result(self, result):
+        cursor = None
+
+        try:
+            if self.connection.is_connected():
+                self.connection = mysql.connector.connect(
+                    **yaml.safe_load(open(self.config_path, 'r'))
+                )
+
+            cursor = self.connection.cursor(dictionary=True)
 
             table = 'tbl_result'
             insert_query = f"""
@@ -28,30 +40,27 @@ def insert_result(result):
 
             result[-1] = str(result[-1])
             cursor.execute(insert_query, result)
-            connection.commit()
+            self.connection.commit()
             logging.info(f'Entry successfully inserted into {table}')
 
-    except Error as e:
-        connection.rollback()
-        connection = None
-        logging.error(f'Error: {e}')
+        except Error as e:
+            self.connection.rollback()
+            logging.error(f'Error: {e}')
 
-    finally:
-        if connection and connection.is_connected():
+        finally:
             if cursor:
                 cursor.close()
-            connection.close()
-            logging.info('MySQL connection closed')
 
+    def get_result_header(self):
+        cursor = None
 
-def get_result_header():
-    connection = None
-    cursor = None
+        try:
+            if self.connection.is_connected():
+                self.connection = mysql.connector.connect(
+                    **yaml.safe_load(open(self.config_path, 'r'))
+                )
 
-    try:
-        connection = mysql.connector.connect(**DB_CONFIG, buffered=True)
-        if connection.is_connected():
-            cursor = connection.cursor()
+            cursor = self.connection.cursor()
 
             table = 'tbl_result'
             describe_query = f'''DESCRIBE {table}'''
@@ -61,13 +70,9 @@ def get_result_header():
 
             return [column[0] for column in cursor.fetchall()]
 
-    except Error as e:
-        connection = None
-        logging.error(f'Error: {e}')
+        except Error as e:
+            logging.error(f'Error: {e}')
 
-    finally:
-        if connection and connection.is_connected():
+        finally:
             if cursor:
                 cursor.close()
-            connection.close()
-            logging.info('MySQL connection closed')

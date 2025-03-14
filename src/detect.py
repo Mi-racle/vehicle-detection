@@ -3,11 +3,7 @@ from datetime import timedelta
 from matplotlib import colors
 
 from config import *
-from db.camera import get_camera_by_camera_id
-from db.group import get_group_by_group_id
-from db.model import get_model_by_model_id
-from db.result import insert_result
-from db.task_offline import update_offline_task_status_by_id
+from db.db_config import CAMERA_DAO, MODEL_DAO, GROUP_DAO, RESULT_DAO, TASK_OFFLINE_DAO
 from detectors import *
 from utils import is_in_analysis, get_url_type
 
@@ -26,9 +22,9 @@ def old_run():
     height = int(cap_in.get(cv2.CAP_PROP_FRAME_HEIGHT))
     cap_out = cv2.VideoWriter(GENERAL_CONFIG['dest'], cv2.VideoWriter.fourcc(*'mp4v'), fps, (width, height))
 
-    volume_detector = VolumeDetector(fps=fps, **VOLUME_CONFIG) if GENERAL_CONFIG['det_volume'] else None
+    section_detector = SectionDetector(fps=fps, **SECTION_CONFIG) if GENERAL_CONFIG['det_section'] else None
     velocity_detector = VelocityDetector(fps=fps, **VELOCITY_CONFIG) if GENERAL_CONFIG['det_velocity'] else None
-    polume_detector = PolumeDetector(**POLUME_CONFIG) if GENERAL_CONFIG['det_polume'] else None
+    volume_detector = VolumeDetector(**VOLUME_CONFIG) if GENERAL_CONFIG['det_volume'] else None
     size_detector = SizeDetector(fps=fps, **SIZE_CONFIG) if GENERAL_CONFIG['det_size'] else None
     color_classifier = ColorClassifier(**COLOR_CONFIG) if GENERAL_CONFIG['clas_color'] else None
     pim_detector = PimDetector(fps=fps, **PIM_CONFIG) if GENERAL_CONFIG['det_pim'] else None
@@ -142,14 +138,14 @@ def old_run():
                     color
                 )
 
-        if GENERAL_CONFIG['det_volume']:
+        if GENERAL_CONFIG['det_section']:
             stats_line += 1
-            ret_volume = volume_detector.update(result, frame)
-            cv2.line(img, VOLUME_CONFIG['det_line'][0], VOLUME_CONFIG['det_line'][1], color=(0, 255, 0), thickness=2)
+            ret_section = section_detector.update(result, frame)
+            cv2.line(img, SECTION_CONFIG['det_line'][0], SECTION_CONFIG['det_line'][1], color=(0, 255, 0), thickness=2)
             # cv2.polylines(img, np.array([VOLUME_CONFIG['det_zone']]), isClosed=True, color=(0, 255, 0), thickness=2)
             cv2.putText(
                 img,
-                f'Volume: {ret_volume}',
+                f'Volume: {ret_section}',
                 (0, stats_height * stats_line),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 stats_height / px_per_scale,
@@ -172,14 +168,14 @@ def old_run():
                     (255, 255, 0)
                 )
 
-        if GENERAL_CONFIG['det_polume']:
+        if GENERAL_CONFIG['det_volume']:
             stats_line += 1
-            ret_polume = polume_detector.update(result)
-            # cv2.polylines(img, np.array([POLUME_CONFIG['vertices']]), isClosed=True, color=(0, 100, 255), thickness=2)
-            cv2.line(img, SIZE_CONFIG['vertices'][0], SIZE_CONFIG['vertices'][1], color=(255, 0, 0))
+            ret_volume = volume_detector.update(result)
+            cv2.polylines(img, np.array([VOLUME_CONFIG['vertices']]), isClosed=True, color=(0, 100, 255), thickness=2)
+            # cv2.line(img, SIZE_CONFIG['vertices'][0], SIZE_CONFIG['vertices'][1], color=(255, 0, 0))
             cv2.putText(
                 img,
-                f'Pedestrian volume: {ret_polume}',
+                f'Pedestrian volume: {ret_volume}',
                 (0, stats_height * stats_line),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 stats_height / px_per_scale,
@@ -291,9 +287,9 @@ def run_offline(
         task_entry: dict,
         output_dir: str
 ):
-    group_entry = get_group_by_group_id(task_entry['group_id'])
-    camera_entry = get_camera_by_camera_id(group_entry['camera_id'])
-    model_entry = get_model_by_model_id(group_entry['model_id'])
+    group_entry = GROUP_DAO.get_group_by_group_id(task_entry['group_id'])
+    camera_entry = CAMERA_DAO.get_camera_by_camera_id(group_entry['camera_id'])
+    model_entry = MODEL_DAO.get_model_by_model_id(group_entry['model_id'])
 
     cap_in = cv2.VideoCapture(task_entry['file_url'])
     fps = cap_in.get(cv2.CAP_PROP_FPS)
@@ -305,7 +301,7 @@ def run_offline(
 
     if not model_entry:
         print('Model does not exist')
-        update_offline_task_status_by_id(task_entry['id'], -1)
+        TASK_OFFLINE_DAO.update_offline_task_status_by_id(task_entry['id'], -1)
         return
 
     elif 'parking' in model_entry['model_name']:
@@ -314,7 +310,7 @@ def run_offline(
 
     else:
         print('Unknown error occurred')
-        update_offline_task_status_by_id(task_entry['id'], -1)
+        TASK_OFFLINE_DAO.update_offline_task_status_by_id(task_entry['id'], -1)
         return
 
     timer = timedelta(seconds=0)
@@ -366,7 +362,7 @@ def run_offline(
                         None,
                         []  # TODO
                     ]
-                    insert_result(entry)
+                    RESULT_DAO.insert_result(entry)
 
         print(f'Total cost: {time() - st0:.3f} ms')
         print('---------------------')
@@ -382,4 +378,4 @@ def run_offline(
     cap_in.release()
     cap_out.release()
 
-    update_offline_task_status_by_id(task_entry['id'], 1)
+    TASK_OFFLINE_DAO.update_offline_task_status_by_id(task_entry['id'], 1)

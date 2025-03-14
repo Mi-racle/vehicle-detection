@@ -1,4 +1,5 @@
 import ctypes
+import datetime
 import logging
 import sys
 import threading
@@ -11,12 +12,9 @@ import cv2
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
 from ultralytics import YOLO
 
-from db.camera import get_camera_by_camera_id
-from db.group import get_group_by_group_id
-from db.model import get_model_by_model_id
-from db.result import insert_result
-from db.task_offline import update_offline_task_status_by_id
-from detectors import ParkingDetector, WrongwayDetector
+from db.db_config import CAMERA_DAO, GROUP_DAO, MODEL_DAO, RESULT_DAO, TASK_OFFLINE_DAO
+from detectors import ParkingDetector, WrongwayDetector, LanechangeDetector, SpeedingDetector, VelocityDetector, \
+    PimDetector, SectionDetector, VolumeDetector, DensityDetector, QueueDetector
 from ui.display_window import DisplayWindow
 from utils import is_in_analysis, get_url_type
 
@@ -29,7 +27,7 @@ class MainWindow(QMainWindow):
         screen_width, screen_height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
 
         self.setWindowTitle('交通态势识别')
-        self.setGeometry(100, 100, screen_width // 2, screen_height // 2)
+        self.setGeometry(0, 0, screen_width, screen_height)
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -64,10 +62,10 @@ class MainWindow(QMainWindow):
         model_entries = {}  # {'group_id': model_entry}
 
         for group_id in task_entry['group_id']:
-            group_entry = get_group_by_group_id(group_id)
+            group_entry = GROUP_DAO.get_group_by_group_id(group_id)
 
-            camera_entry = get_camera_by_camera_id(group_entry['camera_id'])
-            model_entry = get_model_by_model_id(group_entry['model_id'])
+            camera_entry = CAMERA_DAO.get_camera_by_camera_id(group_entry['camera_id'])
+            model_entry = MODEL_DAO.get_model_by_model_id(group_entry['model_id'])
             det_args = group_entry['args']
 
             camera_entries[group_id] = camera_entry
@@ -87,16 +85,32 @@ class MainWindow(QMainWindow):
 
             if not model_entry:
                 logging.info('Model does not exist')
-                update_offline_task_status_by_id(task_entry['id'], -1)
+                TASK_OFFLINE_DAO.update_offline_task_status_by_id(task_entry['id'], -1)
                 cap_in.release()
                 return
             elif 'parking' in model_entry['model_name'].lower():
                 detectors[group_id] = ParkingDetector(fps=fps, **det_args)
             elif 'wrongway' in model_entry['model_name'].lower():
                 detectors[group_id] = WrongwayDetector(fps=fps, **det_args)
+            elif 'lanechange' in model_entry['model_name'].lower():
+                detectors[group_id] = LanechangeDetector(fps=fps, **det_args)
+            elif 'speeding' in model_entry['model_name'].lower():
+                detectors[group_id] = SpeedingDetector(fps=fps, **det_args)
+            elif 'velocity' in model_entry['model_name'].lower():
+                detectors[group_id] = VelocityDetector(fps=fps, **det_args)
+            elif 'pim' in model_entry['model_name'].lower():
+                detectors[group_id] = PimDetector(fps=fps, **det_args)
+            elif 'section' in model_entry['model_name'].lower():
+                detectors[group_id] = SectionDetector(fps=fps, **det_args)
+            elif 'volume' in model_entry['model_name'].lower():
+                detectors[group_id] = VolumeDetector(fps=fps, **det_args)
+            elif 'density' in model_entry['model_name'].lower():
+                detectors[group_id] = DensityDetector(fps=fps, **det_args)
+            elif 'queue' in model_entry['model_name'].lower():
+                detectors[group_id] = QueueDetector(fps=fps, **det_args)
             else:
-                logging.info('Unknown error occurred')
-                update_offline_task_status_by_id(task_entry['id'], -1)
+                logging.info('Unknown model found')
+                TASK_OFFLINE_DAO.update_offline_task_status_by_id(task_entry['id'], -1)
                 cap_in.release()
                 return
 
@@ -107,6 +121,10 @@ class MainWindow(QMainWindow):
         def detect():
             end_as_designed = False
             timer = timedelta(seconds=0)
+
+            if task_entry['analysis_start_time']:
+                cap_in.set(cv2.CAP_PROP_POS_MSEC, task_entry['analysis_start_time'].total_seconds() * 1e3)
+                timer = timedelta(seconds=task_entry['analysis_start_time'].total_seconds())
 
             while cap_in.isOpened() and not self.is_close:
                 st0 = time()
@@ -129,7 +147,7 @@ class MainWindow(QMainWindow):
                         if isinstance(det_model, YOLO):
                             result = det_model.track(
                                 source=frame,
-                                imgsz=width,
+                                imgsz=min(1080, width),
                                 save=False,
                                 agnostic_nms=True,
                                 persist=True,
@@ -145,22 +163,34 @@ class MainWindow(QMainWindow):
 
                     print(f'Model cost: {time() - st1:.3f} s')
 
-                    for group in detectors:
+                    stats_line = 1
+                    subscript_line = 1
+                    for i, group in enumerate(detectors):
                         detector = detectors[group]
                         camera = camera_entries[group]
                         model = model_entries[group]
 
                         det_ret = detector.update(results[group])
-                        plotted_frame = detector.plot(det_ret, plotted_frame)
+                        plotted_frame = detector.plot(det_ret, plotted_frame, stats_line, subscript_line)
+                        stats_line, subscript_line = detector.update_line(stats_line, subscript_line)
                         dests = detector.output_corpus(output_dir)
 
                         if not dests:
                             continue
 
                         for dest in dests:
-                            td_duration_threshold = timedelta(seconds=det_args['duration_threshold'])
-                            td_half_diff = timedelta(
-                                seconds=max((det_args['video_length'] - det_args['duration_threshold']) // 2, 0))
+                            if 'video_length' not in det_args:
+                                start_time = timer
+                                end_time = timer
+                            elif 'duration_threshold' not in det_args:
+                                td_video_length = timedelta(seconds=det_args['video_length'])
+                                start_time = timer - td_video_length
+                                end_time = timer
+                            else:
+                                td_duration_threshold = timedelta(seconds=det_args['duration_threshold'])
+                                td_half_diff = timedelta(seconds=max((det_args['video_length'] - det_args['duration_threshold']) // 2, 0))
+                                start_time = timer - td_half_diff - td_duration_threshold
+                                end_time = timer - td_half_diff
 
                             entry = [
                                 model['model_name'],
@@ -170,13 +200,13 @@ class MainWindow(QMainWindow):
                                 get_url_type(camera['url']),
                                 camera['url'],
                                 dest,
-                                timer - td_half_diff - td_duration_threshold,
-                                timer - td_half_diff,
+                                start_time,
+                                end_time,
                                 None,
                                 []  # TODO
                             ]
                             self.display_window.add_info(entry)
-                            insert_result(entry)
+                            RESULT_DAO.insert_result(entry)
 
                 cap_out.write(plotted_frame)
                 self.display_window.set_image(plotted_frame)
@@ -194,7 +224,7 @@ class MainWindow(QMainWindow):
             cap_out.release()
 
             if end_as_designed:
-                update_offline_task_status_by_id(task_entry['id'], 1)
+                TASK_OFFLINE_DAO.update_offline_task_status_by_id(task_entry['id'], 1)
 
         self.task = threading.Thread(target=detect)
         self.task.start()

@@ -5,7 +5,7 @@ import numpy as np
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QTableWidget, QHeaderView, QTableWidgetItem, QVBoxLayout, QComboBox, \
     QLabel
 
-from db.result import get_result_header
+from db.db_config import RESULT_DAO
 from ui.image_label import ImageLabel
 
 
@@ -25,7 +25,7 @@ class DisplayWindow(QWidget):
         right_layout = QVBoxLayout()
 
         self.combobox_label = QLabel()
-        self.combobox_label.setText('选择车辆：（目前记录数0）')
+        self.combobox_label.setText('选择记录：（目前记录数0）')
 
         self.object_combobox = QComboBox()
         self.object_combobox.setFixedWidth(192)
@@ -53,14 +53,14 @@ class DisplayWindow(QWidget):
         self.setLayout(layout)
 
         self.infos = []
-        self.fields = get_result_header()[1:]
+        self.fields = RESULT_DAO.get_result_header()[1:]
 
     def set_image(self, frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray):
         self.image_label.set_umat(frame)
 
     def add_info(self, info: list):
         self.infos.append(info)
-        self.combobox_label.setText(f'选择车辆：（目前记录数{len(self.infos)}）')
+        self.combobox_label.setText(f'选择记录：（目前记录数{len(self.infos)}）')
         self.object_combobox.addItem(info[6])
 
     def update_table(self):
