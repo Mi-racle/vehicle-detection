@@ -1583,4 +1583,3 @@ class SpeedingDetector:
     @staticmethod
     def update_line(stats: int, subscript: int):
         return stats, subscript + 1
-progress
