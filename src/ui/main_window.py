@@ -1,5 +1,4 @@
 import ctypes
-import datetime
 import logging
 import sys
 import threading
@@ -12,11 +11,11 @@ import cv2
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
 from ultralytics import YOLO
 
-from db.db_config import CAMERA_DAO, GROUP_DAO, MODEL_DAO, RESULT_DAO, TASK_OFFLINE_DAO
+from db import CAMERA_DAO, GROUP_DAO, MODEL_DAO, RESULT_DAO, TASK_OFFLINE_DAO
 from detectors import ParkingDetector, WrongwayDetector, LanechangeDetector, SpeedingDetector, VelocityDetector, \
-    PimDetector, SectionDetector, VolumeDetector, DensityDetector, QueueDetector
+    PimDetector, SectionDetector, VolumeDetector, DensityDetector, QueueDetector, JamDetector
 from ui.display_window import DisplayWindow
-from utils import is_in_analysis, get_url_type
+from utils import is_in_analysis
 
 
 class MainWindow(QMainWindow):
@@ -58,6 +57,7 @@ class MainWindow(QMainWindow):
 
         det_models: dict[str, dict[str, Any]] = {}
         detectors = {}  # {'group_id': Detector}
+        dets_args = {}  # {'group_id': det_args}
         camera_entries = {}  # {'group_id': camera_entry}
         model_entries = {}  # {'group_id': model_entry}
 
@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
 
             camera_entries[group_id] = camera_entry
             model_entries[group_id] = model_entry
+            dets_args[group_id] = det_args
 
             if model_entry['file_path'] not in det_models.keys():
                 det_models[model_entry['file_path']] = {
@@ -108,6 +109,8 @@ class MainWindow(QMainWindow):
                 detectors[group_id] = DensityDetector(fps=fps, **det_args)
             elif 'queue' in model_entry['model_name'].lower():
                 detectors[group_id] = QueueDetector(fps=fps, **det_args)
+            elif 'jam' in model_entry['model_name'].lower():
+                detectors[group_id] = JamDetector(fps=fps, **det_args)
             else:
                 logging.info('Unknown model found')
                 TASK_OFFLINE_DAO.update_offline_task_status_by_id(task_entry['id'], -1)
@@ -120,7 +123,7 @@ class MainWindow(QMainWindow):
 
         def detect():
             end_as_designed = False
-            timer = timedelta(seconds=0)
+            timer = timedelta(seconds=1 / fps)
 
             if task_entry['analysis_start_time']:
                 cap_in.set(cv2.CAP_PROP_POS_MSEC, task_entry['analysis_start_time'].total_seconds() * 1e3)
@@ -165,10 +168,11 @@ class MainWindow(QMainWindow):
 
                     stats_line = 1
                     subscript_line = 1
-                    for i, group in enumerate(detectors):
+                    for group in detectors:  # 'group' is group id
                         detector = detectors[group]
                         camera = camera_entries[group]
                         model = model_entries[group]
+                        dargs = dets_args[group]
 
                         det_ret = detector.update(results[group])
                         plotted_frame = detector.plot(det_ret, plotted_frame, stats_line, subscript_line)
@@ -179,26 +183,26 @@ class MainWindow(QMainWindow):
                             continue
 
                         for dest in dests:
-                            if 'video_length' not in det_args:
+                            if 'video_length' not in dargs:
                                 start_time = timer
                                 end_time = timer
-                            elif 'duration_threshold' not in det_args:
-                                td_video_length = timedelta(seconds=det_args['video_length'])
+                            elif 'duration_threshold' not in dargs:
+                                td_video_length = timedelta(seconds=dargs['video_length'])
                                 start_time = timer - td_video_length
                                 end_time = timer
                             else:
-                                td_duration_threshold = timedelta(seconds=det_args['duration_threshold'])
-                                td_half_diff = timedelta(seconds=max((det_args['video_length'] - det_args['duration_threshold']) // 2, 0))
-                                start_time = timer - td_half_diff - td_duration_threshold
-                                end_time = timer - td_half_diff
+                                td_video_length = timedelta(seconds=dargs['video_length'])
+                                td_diff = timedelta(seconds=max(dargs['video_length'] - dargs['duration_threshold'], 0))
+                                start_time = timer - td_video_length
+                                end_time = timer - td_diff
 
                             entry = [
                                 model['model_name'],
                                 model['model_version'],
                                 camera['type'],
                                 camera['camera_id'],
-                                get_url_type(camera['url']),
-                                camera['url'],
+                                2,
+                                task_entry['file_url'],
                                 dest,
                                 start_time,
                                 end_time,

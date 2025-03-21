@@ -5,7 +5,7 @@ import numpy as np
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QTableWidget, QHeaderView, QTableWidgetItem, QVBoxLayout, QComboBox, \
     QLabel
 
-from db.db_config import RESULT_DAO
+from db import RESULT_DAO
 from ui.image_label import ImageLabel
 
 

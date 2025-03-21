@@ -155,12 +155,15 @@ def generate_video_generally(
 ):
     frame_buffer = [r.orig_img for r in list(result_buffer)]
     frames_to_write = []
+    color = color if color else (0, 0, 255)
 
     for i, buffered_frame in enumerate(frame_buffer):
         frame_copy = buffered_frame.copy()
 
-        if len(vertices) >= 4:
-            cv2.polylines(frame_copy, np.array(vertices), isClosed=True, color=color, thickness=2)
+        if not vertices:
+            pass
+        elif len(vertices) >= 4:
+            cv2.polylines(frame_copy, np.array([vertices]), isClosed=True, color=color, thickness=2)
         elif len(vertices) >= 2:
             cv2.line(frame_copy, vertices[0], vertices[1], color=color, thickness=2)
 
@@ -315,7 +318,8 @@ def update_counts(
     
         if idx in counts and counts[idx] >= duration_frame_num:
             # countdowns[idx] = video_frame_num // 2
-            countdowns[idx] = max((video_frame_num - duration_frame_num) // 2, 0)
+            # countdowns[idx] = max((video_frame_num - duration_frame_num) // 2, 0)
+            countdowns[idx] = max(video_frame_num - duration_frame_num, 0)
             del counts[idx]
     
     else:
@@ -328,10 +332,6 @@ def generate_hash20(string: str) -> str:
     hex_dig = hash_object.hexdigest()
 
     return hex_dig[:20]
-
-
-def get_url_type(string: str) -> int:
-    return 1 if string.lower().startswith('rtsp://') else 0
 
 
 def is_in_analysis(curr_time: timedelta, start_time: timedelta | None, end_time: timedelta | None) -> bool:

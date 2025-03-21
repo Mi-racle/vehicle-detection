@@ -3,9 +3,9 @@ from datetime import timedelta
 from matplotlib import colors
 
 from config import *
-from db.db_config import CAMERA_DAO, MODEL_DAO, GROUP_DAO, RESULT_DAO, TASK_OFFLINE_DAO
+from db import CAMERA_DAO, GROUP_DAO, MODEL_DAO, RESULT_DAO, TASK_OFFLINE_DAO
 from detectors import *
-from utils import is_in_analysis, get_url_type
+from utils import is_in_analysis
 
 
 def old_run():
@@ -313,7 +313,7 @@ def run_offline(
         TASK_OFFLINE_DAO.update_offline_task_status_by_id(task_entry['id'], -1)
         return
 
-    timer = timedelta(seconds=0)
+    timer = timedelta(seconds=1/fps)
 
     while cap_in.isOpened():
         st0 = time()
@@ -354,8 +354,8 @@ def run_offline(
                         model_entry['model_version'],
                         camera_entry['type'],
                         camera_entry['camera_id'],
-                        get_url_type(camera_entry['url']),
-                        camera_entry['url'],
+                        2,
+                        task_entry['file_url'],
                         dest,
                         timer - td_half_diff - td_duration_threshold,
                         timer - td_half_diff,

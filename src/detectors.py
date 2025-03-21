@@ -18,25 +18,105 @@ from ultralytics import YOLO
 from ultralytics.engine.results import Results
 
 from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, \
-    cal_intersection_ratio, generate_videos_respectively, update_counts, generate_video_generally, increment_path, \
+    cal_intersection_ratio, update_counts, generate_video_generally, increment_path, \
     generate_video, generate_hash20
 
 
-def detect_jam(
-        result: Results,
-        cls_indices: list,
-        n_threshold: int
-) -> bool:
-    count = 0
+class JamDetector:
+    def __init__(
+            self,
+            cls_indices: list,
+            det_zone: list,
+            n_threshold: float,
+            video_length: float,
+            fps: float
+    ):
+        self.__cls_indices = cls_indices
+        self.__det_zone = det_zone
+        self.__n_threshold = n_threshold
+        self.__fps = fps
+        self.__video_frame_num = max(round(video_length * fps), 1)
+        self.__result_buffer = deque(maxlen=self.__video_frame_num)
+        self.__jam = False
+        self.__countdown = self.__video_frame_num
 
-    for ele in result.boxes.cls:
-        if ele in cls_indices:
+    def update(
+            self,
+            result: Results
+    ) -> bool:
+        # TODO
+        self.__result_buffer.append(result)
+
+        if self.__jam:
+            self.__countdown -= 1
+            return True
+
+        count = 0
+
+        if result.boxes.id is None:
+            return False
+
+        for i, idx in enumerate(result.boxes.id):
+            center = Point(result.boxes.xywh[i][:2])
+            if result.boxes.cls[i] not in self.__cls_indices or not Polygon(self.__det_zone).contains(center):
+                continue
+
             count += 1
 
-            if count >= n_threshold:
+            if count >= self.__n_threshold:
+                self.__jam = True
                 return True
 
-    return False
+        return False
+
+    def plot(
+            self,
+            state: bool,
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
+            stats_line: int | None = 1,
+            subscript_line: int | None = 1
+    ) -> cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray:
+        result = deepcopy(self.__result_buffer[-1])
+
+        if frame is not None:
+            result.orig_img = frame
+
+        img = result.plot(conf=False, line_width=1)
+
+        cv2.polylines(img, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
+        cv2.putText(
+            img,
+            f'Jam: {state}',
+            (0, 30 * stats_line),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 255, 0)
+        )
+
+        return img
+
+    def output_corpus(self, output_dir: str) -> list[str]:
+        dests = []
+
+        if self.__countdown <= 0:
+            dest = generate_hash20(f'{type(self).__name__}{time()}')
+            dests.append(dest)
+
+            generate_video_generally(
+                f'{output_dir}/{dest}.mp4',
+                self.__result_buffer,
+                self.__fps,
+                color=(0, 0, 255)
+            )
+
+            self.__countdown = self.__video_frame_num
+            self.__jam = False
+
+        return dests
+
+    @staticmethod
+    def update_line(stats: int, subscript: int):
+        return stats + 1, subscript
 
 
 class QueueDetector:
@@ -710,7 +790,6 @@ class VolumeDetector:
         img = result.plot(conf=False, line_width=1)
 
         cv2.polylines(img, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=5)
-        print(state)
         cv2.putText(
             img,
             f'Intersection volume: {state}',
@@ -1504,3 +1583,4 @@ class SpeedingDetector:
     @staticmethod
     def update_line(stats: int, subscript: int):
         return stats, subscript + 1
+progress

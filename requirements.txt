@@ -1,5 +1,6 @@
+esdk-obs-python
 matplotlib
-mysql-connector-python == 9.0.0
+mysql-connector-python
 numpy
 opencv-python
 pillow
@@ -9,7 +10,8 @@ scikit-learn
 sympy
 shapely
 tensorrt-cu11
-torch == 2.5.1+cu118
-torchvision == 0.20.1+cu118
+torch
+torchvision
 tqdm
 ultralytics
+pyqt6-sip

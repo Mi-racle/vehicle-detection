@@ -6,7 +6,7 @@ from datetime import datetime
 import cv2
 from PyQt6.QtWidgets import QApplication
 
-from db.db_config import TASK_OFFLINE_DAO
+from db import TASK_OFFLINE_DAO
 from ui.main_window import MainWindow
 
 
