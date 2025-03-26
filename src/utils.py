@@ -1,6 +1,7 @@
 import glob
 import hashlib
 import math
+import os.path
 import re
 from datetime import timedelta
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Sequence, Any
 import cv2
 import numpy as np
 import sympy as sp
+from PIL import Image, ImageDraw, ImageFont
 from shapely.geometry.linestring import LineString
 from shapely.geometry.point import Point
 from ultralytics.engine.results import Results
@@ -110,11 +112,11 @@ def increment_path(dst_path: str, exist_ok=False, sep='', mkdir=False):
     if dst_path.exists() and not exist_ok:
         suffix = dst_path.suffix
         dst_path = dst_path.with_suffix('')
-        dirs = glob.glob(f"{dst_path}{sep}*")  # similar paths
-        matches = [re.search(rf"%s{sep}(\d+)" % dst_path.stem, d) for d in dirs]
+        dirs = glob.glob(f'{dst_path}{sep}*')  # similar paths
+        matches = [re.search(rf'{dst_path.stem}{sep}(\d+)', d) for d in dirs]
         i = [int(m.groups()[0]) for m in matches if m]  # indices
         n = max(i) + 1 if i else 1  # increment number
-        dst_path = Path(f"{dst_path}{sep}{n}{suffix}")  # update path
+        dst_path = Path(f'{dst_path}{sep}{n}{suffix}')  # update path
 
     _dir = dst_path if dst_path.suffix == '' else dst_path.parent  # directory
 
@@ -122,6 +124,17 @@ def increment_path(dst_path: str, exist_ok=False, sep='', mkdir=False):
         _dir.mkdir(parents=True, exist_ok=True)  # make directory
 
     return str(dst_path)
+
+
+def get_file_by_substr(dir_path: str, substr: str) -> str | None:
+    if not os.path.exists(dir_path):
+        return None
+
+    for filename in os.listdir(dir_path):
+        if substr in filename:
+            return filename
+
+    return None
 
 
 def assemble_frames(
@@ -334,7 +347,7 @@ def generate_hash20(string: str) -> str:
     return hex_dig[:20]
 
 
-def is_in_analysis(curr_time: timedelta, start_time: timedelta | None, end_time: timedelta | None) -> bool:
+def in_analysis(curr_time: timedelta, start_time: timedelta | None, end_time: timedelta | None) -> bool:
     if not start_time and not end_time:
         return True
 
@@ -346,3 +359,23 @@ def is_in_analysis(curr_time: timedelta, start_time: timedelta | None, end_time:
 
     else:
         return start_time <= curr_time <= end_time
+
+
+def put_text_ch(
+        img: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray,
+        text: str,
+        org: Sequence[int],
+        font_scale: float,
+        color: Sequence[float]
+):
+    pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    drawer = ImageDraw.Draw(pil_img)
+    drawer.text(
+        (org[0], org[1]),
+        text,
+        (int(color[2]), int(color[1]), int(color[0])),
+        font=ImageFont.truetype('simsun.ttc', 30 * font_scale)
+    )
+    img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+
+    return img

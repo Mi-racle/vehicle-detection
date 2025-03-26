@@ -5,7 +5,7 @@ from matplotlib import colors
 from config import *
 from db import CAMERA_DAO, GROUP_DAO, MODEL_DAO, RESULT_DAO, TASK_OFFLINE_DAO
 from detectors import *
-from utils import is_in_analysis
+from utils import in_analysis
 
 
 def old_run():
@@ -339,7 +339,7 @@ def run_offline(
 
         plotted_frame = None
 
-        if is_in_analysis(timer, task_entry['analysis_start_time'], task_entry['analysis_end_time']):
+        if in_analysis(timer, task_entry['analysis_start_time'], task_entry['analysis_end_time']):
             det_ret = detector.update(result)
             plotted_frame = detector.plot(det_ret)
             dests = detector.output_corpus(output_dir)

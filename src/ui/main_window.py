@@ -1,5 +1,6 @@
 import ctypes
 import logging
+import os.path
 import sys
 import threading
 from datetime import timedelta
@@ -13,9 +14,11 @@ from ultralytics import YOLO
 
 from db import CAMERA_DAO, GROUP_DAO, MODEL_DAO, RESULT_DAO, TASK_OFFLINE_DAO
 from detectors import ParkingDetector, WrongwayDetector, LanechangeDetector, SpeedingDetector, VelocityDetector, \
-    PimDetector, SectionDetector, VolumeDetector, DensityDetector, QueueDetector, JamDetector
+    PimDetector, SectionDetector, VolumeDetector, DensityDetector, QueueDetector, JamDetector, PlateDetector, \
+    TriangleDetector, SizeDetector
+from ocr.ocrer import OCRer
 from ui.display_window import DisplayWindow
-from utils import is_in_analysis
+from utils import in_analysis, get_file_by_substr
 
 
 class MainWindow(QMainWindow):
@@ -72,12 +75,24 @@ class MainWindow(QMainWindow):
             model_entries[group_id] = model_entry
             dets_args[group_id] = det_args
 
-            if model_entry['file_path'] not in det_models.keys():
-                det_models[model_entry['file_path']] = {
-                    'model': YOLO(model_entry['file_path']),  # TODO
-                    'groups': [group_id],
-                    'classes': det_args['cls_indices'] if det_args.get('cls_indices') else None
-                }
+            if model_entry['file_path'] not in det_models:
+                mdl = None
+                if 'yolo' in model_entry['file_path']:
+                    mdl = YOLO(model_entry['file_path'])
+                elif 'ocr' in model_entry['file_path'] and os.path.isdir(model_entry['file_path']):
+                    det_file = get_file_by_substr(model_entry['file_path'], 'det')
+                    rec_file = get_file_by_substr(model_entry['file_path'], 'rec')
+                    if det_file and rec_file:
+                        mdl = OCRer(
+                            det_model_path=os.path.join(model_entry['file_path'], det_file),
+                            rec_model_path=os.path.join(model_entry['file_path'], rec_file)
+                        )
+                if mdl:
+                    det_models[model_entry['file_path']] = {
+                        'model': mdl,
+                        'groups': [group_id],
+                        'classes': det_args['cls_indices'] if det_args.get('cls_indices') else None
+                    }
             else:
                 det_models[model_entry['file_path']]['groups'].append(group_id)
                 if det_args.get('cls_indices'):
@@ -111,6 +126,12 @@ class MainWindow(QMainWindow):
                 detectors[group_id] = QueueDetector(fps=fps, **det_args)
             elif 'jam' in model_entry['model_name'].lower():
                 detectors[group_id] = JamDetector(fps=fps, **det_args)
+            elif 'plate' in model_entry['model_name'].lower():
+                detectors[group_id] = PlateDetector(fps=fps, **det_args)
+            elif 'triangle' in model_entry['model_name'].lower():
+                detectors[group_id] = TriangleDetector(fps=fps, **det_args)
+            elif 'size' in model_entry['model_name'].lower():
+                detectors[group_id] = SizeDetector(fps=fps, **det_args)
             else:
                 logging.info('Unknown model found')
                 TASK_OFFLINE_DAO.update_offline_task_status_by_id(task_entry['id'], -1)
@@ -141,76 +162,82 @@ class MainWindow(QMainWindow):
 
                 plotted_frame = frame.copy()
 
-                if is_in_analysis(timer, task_entry['analysis_start_time'], task_entry['analysis_end_time']):
-                    results = {}  # {group_id: result}
+                if not in_analysis(timer, task_entry['analysis_start_time'], task_entry['analysis_end_time']):
+                    end_as_designed = True
+                    break
 
-                    for values in det_models.values():
-                        det_model = values['model']
+                results = {}  # {group_id: result}
 
-                        if isinstance(det_model, YOLO):
-                            result = det_model.track(
-                                source=frame,
-                                imgsz=min(1080, width),
-                                save=False,
-                                agnostic_nms=True,
-                                persist=True,
-                                verbose=False,
-                                device=0,
-                                classes=values['classes']
-                            )[0].cpu().numpy()
-                        else:  # TODO OCR
-                            result = None
+                for values in det_models.values():
+                    det_model = values['model']
 
-                        for group in values['groups']:
-                            results[group] = result
+                    if isinstance(det_model, YOLO):
+                        result = det_model.track(
+                            source=frame,
+                            imgsz=(min(640 * height // width, height), min(640, width)),
+                            save=False,
+                            agnostic_nms=True,
+                            persist=True,
+                            verbose=False,
+                            device=0,
+                            classes=values['classes']
+                        )[0].cpu().numpy()
+                    elif isinstance(det_model, OCRer):
+                        result = det_model.ocr(frame)
+                    else:
+                        result = None
+                        logging.error('result is None')
 
-                    print(f'Model cost: {time() - st1:.3f} s')
+                    for group in values['groups']:
+                        results[group] = result
 
-                    stats_line = 1
-                    subscript_line = 1
-                    for group in detectors:  # 'group' is group id
-                        detector = detectors[group]
-                        camera = camera_entries[group]
-                        model = model_entries[group]
-                        dargs = dets_args[group]
+                print(f'Model cost: {time() - st1:.3f} s')
 
-                        det_ret = detector.update(results[group])
-                        plotted_frame = detector.plot(det_ret, plotted_frame, stats_line, subscript_line)
-                        stats_line, subscript_line = detector.update_line(stats_line, subscript_line)
-                        dests = detector.output_corpus(output_dir)
+                stats_line = 1
+                subscript_line = 1
+                for group in detectors:  # 'group' is group id
+                    detector = detectors[group]
+                    camera = camera_entries[group]
+                    model = model_entries[group]
+                    dargs = dets_args[group]
 
-                        if not dests:
-                            continue
+                    det_ret = detector.update(results[group])
+                    plotted_frame = detector.plot(det_ret, plotted_frame, stats_line, subscript_line)
+                    stats_line, subscript_line = detector.update_line(stats_line, subscript_line)
+                    dests = detector.output_corpus(output_dir, frame)
 
-                        for dest in dests:
-                            if 'video_length' not in dargs:
-                                start_time = timer
-                                end_time = timer
-                            elif 'duration_threshold' not in dargs:
-                                td_video_length = timedelta(seconds=dargs['video_length'])
-                                start_time = timer - td_video_length
-                                end_time = timer
-                            else:
-                                td_video_length = timedelta(seconds=dargs['video_length'])
-                                td_diff = timedelta(seconds=max(dargs['video_length'] - dargs['duration_threshold'], 0))
-                                start_time = timer - td_video_length
-                                end_time = timer - td_diff
+                    if not dests:
+                        continue
 
-                            entry = [
-                                model['model_name'],
-                                model['model_version'],
-                                camera['type'],
-                                camera['camera_id'],
-                                2,
-                                task_entry['file_url'],
-                                dest,
-                                start_time,
-                                end_time,
-                                None,
-                                []  # TODO
-                            ]
-                            self.display_window.add_info(entry)
-                            RESULT_DAO.insert_result(entry)
+                    for dest in dests:
+                        if 'video_length' not in dargs:
+                            start_time = timer
+                            end_time = timer
+                        elif 'duration_threshold' not in dargs:
+                            td_video_length = timedelta(seconds=dargs['video_length'])
+                            start_time = timer - td_video_length
+                            end_time = timer
+                        else:
+                            td_video_length = timedelta(seconds=dargs['video_length'])
+                            td_diff = timedelta(seconds=max(dargs['video_length'] - dargs['duration_threshold'], 0))
+                            start_time = timer - td_video_length
+                            end_time = timer - td_diff
+
+                        entry = [
+                            model['model_name'],
+                            model['model_version'],
+                            camera['type'],
+                            camera['camera_id'],
+                            2,
+                            task_entry['file_url'],
+                            dest,
+                            start_time,
+                            end_time,
+                            None,
+                            []  # TODO
+                        ]
+                        self.display_window.add_info(entry)
+                        RESULT_DAO.insert_result(entry)
 
                 cap_out.write(plotted_frame)
                 self.display_window.set_image(plotted_frame)

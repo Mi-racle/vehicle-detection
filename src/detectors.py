@@ -1,4 +1,5 @@
 import math
+import re
 from collections import deque
 from copy import deepcopy
 from time import time
@@ -12,6 +13,7 @@ from PIL import Image
 from shapely.geometry.linestring import LineString
 from shapely.geometry.point import Point
 from shapely.geometry.polygon import Polygon
+from threadpoolctl import threadpool_limits
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 from ultralytics import YOLO
@@ -19,7 +21,7 @@ from ultralytics.engine.results import Results
 
 from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, \
     cal_intersection_ratio, update_counts, generate_video_generally, increment_path, \
-    generate_video, generate_hash20
+    generate_video, generate_hash20, put_text_ch
 
 
 class JamDetector:
@@ -95,7 +97,7 @@ class JamDetector:
 
         return img
 
-    def output_corpus(self, output_dir: str) -> list[str]:
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
         dests = []
 
         if self.__countdown <= 0:
@@ -212,7 +214,7 @@ class QueueDetector:
 
         return img
 
-    def output_corpus(self, output_dir: str) -> list[str]:
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
         dests = []
         frame_copy = self.__buffered_result.orig_img.copy()
 
@@ -311,7 +313,7 @@ class DensityDetector:
 
         return img
 
-    def output_corpus(self, output_dir: str) -> list[str]:
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
         dests = []
         frame_copy = self.__buffered_result.orig_img.copy()
 
@@ -344,26 +346,29 @@ class SizeDetector:
     def __init__(
             self,
             cls_indices: list,
-            vertices: list,
+            det_line: list,
             thresholds: list,
             delta_second: float,
             fps: float
     ):
         self.__res = {}
         self.__cls_indices = cls_indices
-        self.__line = LineString(vertices)
+        self.__det_line = det_line
         self.__thresholds = thresholds
-        self.__buffer = deque(maxlen=max(round(delta_second * fps), 1))
+        self.__result_buffer = deque(maxlen=max(round(delta_second * fps), 1))
+        self.__counts = {}
+        self.__output_countdowns = {}
 
     def update(
             self,
             result: Results
     ) -> dict[int, str]:
+        self.__result_buffer.append(result)
+
         if result.boxes.id is None:
             return {}
 
-        if len(self.__buffer) == 0:
-            self.__buffer.appendleft(result)
+        if len(self.__result_buffer) == 0:
             return {idx: 'unknown' for idx in result.boxes.id}
 
         ret = {}
@@ -379,7 +384,7 @@ class SizeDetector:
             curr_x, curr_y, br_x, br_y = result.boxes.xyxy[i]
 
             cal_flag = False
-            for j, buf in enumerate(self.__buffer):
+            for j, buf in enumerate(self.__result_buffer):
                 if buf.boxes.id is None:
                     continue
 
@@ -389,7 +394,7 @@ class SizeDetector:
                     prev_x, prev_y = buf.boxes.xyxy[retrieve[0]][:2]
                     delta_track = LineString([[prev_x, prev_y], [curr_x, curr_y]])
 
-                    if delta_track.intersects(self.__line):
+                    if delta_track.intersects(LineString(self.__det_line)):
                         cal_flag = True
                         break
 
@@ -403,71 +408,99 @@ class SizeDetector:
                 else:
                     size = 'large'
 
+                if idx not in self.__res:
+                    update_counts(
+                        True,
+                        True,
+                        idx,
+                        self.__counts,
+                        self.__output_countdowns,
+                        1,
+                        1  # image instead of video
+                    )
+
                 self.__res[idx] = size
                 ret[idx] = size
 
-        self.__buffer.appendleft(result)
-
         return ret
 
-
-class ColorClassifier:
-    def __init__(
+    def plot(
             self,
-            cls_indices: list,
-            resize: list,
-            min_size: list,
-            weights='weights/yolo11n-cls-color.pt',
-            cls_path='configs/color.yaml'
-    ):
-        self.__res = {}
-        self.__cls_indices = cls_indices
-        self.__idx2cls: dict = yaml.safe_load(open(cls_path, 'r'))
-        self.__model = YOLO(weights)
-        self.__transform = transforms.Compose([
-            transforms.Resize(resize, interpolation=InterpolationMode.BILINEAR),
-            transforms.ToTensor()
-        ])
-        self.__min_size = min_size
+            states: dict[float, str],
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
+            stats_line: int | None = 1,
+            subscript_line: int | None = 1
+    ) -> cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray:
+        result = deepcopy(self.__result_buffer[-1])
 
-    def classify(
-            self,
-            result: Results,
-            img: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray
-    ) -> dict[int, str]:
-        if result.boxes.id is None:
-            return {}
+        if frame is not None:
+            result.orig_img = frame
 
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = result.plot(conf=False, line_width=1)
 
-        ret = {}
-        idxes = []
-        box_imgs = []
-        for i, idx in enumerate(result.boxes.id):
-            if result.boxes.cls[i] not in self.__cls_indices:
-                continue
+        cv2.line(img, self.__det_line[0], self.__det_line[1], color=(255, 0, 0), thickness=2)
 
-            *_, w, h = result.boxes.xywh[i]
-            if w < self.__min_size[0] or h < self.__min_size[1]:
-                if self.__res.get(idx):
-                    ret[idx] = self.__res[idx]
-                continue
+        for idx in states:
+            retrieve = np.where(result.boxes.id == idx)[0][0]
+            xyxy = result.boxes.xyxy[retrieve]
+            state = states[idx]
+            color = (200, 0, 0) if state == 'small' else (
+                (0, 200, 0) if state == 'medium' else (0, 0, 200)
+            )
+            cv2.putText(
+                img,
+                state,
+                (int(xyxy[2]), int(xyxy[1] + 12 * subscript_line)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                .4,
+                color=color
+            )
+            cv2.rectangle(
+                img,
+                (int(xyxy[0]), int(xyxy[1])),
+                (int(xyxy[2]), int(xyxy[3])),
+                color=color,
+                thickness=2
+            )
 
-            x1, y1, x2, y2 = list(map(int, result.boxes.xyxy[i]))
-            box_img = img[y1: y2, x1: x2, :]
-            box_img = self.__transform(Image.fromarray(box_img))
+        return img
 
-            idxes.append(idx)
-            box_imgs.append(box_img)
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
+        dests = []
+        result = self.__result_buffer[-1]
 
-        preds = self.__model.predict(torch.stack(box_imgs), verbose=False, device=0) if box_imgs else {}
+        for idx in list(self.__output_countdowns.keys()):
+            self.__output_countdowns[idx] -= 1
 
-        for i, pred in enumerate(preds):
-            label = self.__idx2cls[pred.probs.top1]
-            self.__res[idxes[i]] = label
-            ret[idxes[i]] = label
+            if self.__output_countdowns[idx] <= 0:
+                del self.__output_countdowns[idx]
 
-        return ret
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+                dests.append(dest)
+
+                retrieve = np.where(result.boxes.id == idx)[0]
+
+                if retrieve.shape[0] >= 1:
+                    frame_copy = result.orig_img.copy()
+                    list_idx = retrieve[0]
+
+                    xyxy = result.boxes.xyxy[list_idx]
+
+                    cv2.rectangle(
+                        frame_copy,
+                        (int(xyxy[0]), int(xyxy[1])),
+                        (int(xyxy[2]), int(xyxy[3])),
+                        (0, 0, 255),
+                        thickness=2
+                    )
+
+                    cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
+
+        return dests
+
+    @staticmethod
+    def update_line(stats: int, subscript: int):
+        return stats, subscript + 1
 
 
 class SectionDetector:
@@ -554,7 +587,7 @@ class SectionDetector:
 
         return img
 
-    def output_corpus(self, output_dir: str) -> list[str]:
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
         dests = []
 
         if self.__countdown <= 0:
@@ -709,7 +742,7 @@ class VelocityDetector:
 
         return img
 
-    def output_corpus(self, output_dir: str) -> list[str]:
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
         dests = []
 
         for idx in list(self.__output_countdowns.keys()):
@@ -735,7 +768,7 @@ class VelocityDetector:
 
     @staticmethod
     def update_line(stats: int, subscript: int):
-        return stats + 1, subscript
+        return stats, subscript + 1
 
 
 class VolumeDetector:
@@ -801,7 +834,7 @@ class VolumeDetector:
 
         return img
 
-    def output_corpus(self, output_dir: str) -> list[str]:
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
         dests = []
         frame_copy = self.__buffered_result.orig_img.copy()
 
@@ -852,7 +885,7 @@ class PimDetector:
     def update(
             self,
             result: Results
-    ):
+    ) -> dict[float, bool]:
         self.__result_buffer.append(result)
 
         if result.boxes.id is None:
@@ -935,7 +968,7 @@ class PimDetector:
 
         return img
 
-    def output_corpus(self, output_dir: str) -> list[str]:
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
         dests = []
         result = self.__result_buffer[-1]
 
@@ -1093,7 +1126,7 @@ class ParkingDetector:
 
         return img
 
-    def output_corpus(self, output_dir: str) -> list[str]:
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
         dests = []
 
         for idx in list(self.__output_countdowns.keys()):
@@ -1241,7 +1274,7 @@ class WrongwayDetector:
 
         return img
 
-    def output_corpus(self, output_dir: str) -> list[str]:
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
         dests = []
 
         for idx in list(self.__output_countdowns.keys()):
@@ -1400,7 +1433,7 @@ class LanechangeDetector:
 
         return img
 
-    def output_corpus(self, output_dir: str) -> list[str]:
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
         dests = []
 
         for idx in list(self.__output_countdowns.keys()):
@@ -1557,7 +1590,7 @@ class SpeedingDetector:
 
         return img
 
-    def output_corpus(self, output_dir: str) -> list[str]:
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
         dests = []
 
         for idx in list(self.__output_countdowns.keys()):
@@ -1583,3 +1616,240 @@ class SpeedingDetector:
     @staticmethod
     def update_line(stats: int, subscript: int):
         return stats, subscript + 1
+
+
+class PlateDetector:
+    def __init__(
+            self,
+            duration_threshold: float,
+            fps: float
+    ):
+        self.__plate_set = set()
+        self.__fps = fps
+        self.__duration_frame_num = max(round(duration_threshold * fps), 1)
+        self.__result_buffer = deque(maxlen=self.__duration_frame_num)
+        self.__output_countdowns = {}
+        self.__ret = {}
+
+    def update(
+            self,
+            result: tuple[list, list] | tuple[list, list[list[str | float]]]
+    ) -> dict[int, str]:
+        self.__result_buffer.append(result)
+
+        bboxes, rec_reses = result
+        txts = [rec_reses[i][0] for i in range(len(rec_reses))]
+        # scores = [rec_reses[i][1] for i in range(len(rec_reses))]
+
+        self.__ret = {}
+
+        for i, bbox in enumerate(bboxes):
+            txt: str = txts[i]
+            txt = self.__regularize(txt)
+
+            if not txt or txt in self.__plate_set:
+                continue
+
+            self.__ret[i] = txt
+
+            if txt not in self.__output_countdowns:
+                self.__output_countdowns[txt] = self.__duration_frame_num
+
+        return self.__ret
+
+    def plot(
+            self,
+            states: dict[int, str],
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
+            stats_line: int | None = 1,
+            subscript_line: int | None = 1
+    ) -> cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray:
+        result = deepcopy(self.__result_buffer[-1])
+
+        for idx in states:
+            bbox = result[0][idx]
+            tl, br = list(map(int, bbox[0])), list(map(int, bbox[2]))
+            state = states[idx]
+            frame = put_text_ch(
+                frame,
+                state,
+                (int(br[0]), int(tl[1] + 12 * subscript_line)),
+                .8,
+                color=(0, 0, 255)
+            )
+            cv2.rectangle(frame, tl, br, color=(0, 0, 255), thickness=2)
+
+        return frame
+
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
+        dests = []
+        bboxes = self.__result_buffer[-1][0]
+
+        for plate in list(self.__output_countdowns.keys()):
+            if plate in self.__ret.values():
+                self.__output_countdowns[plate] -= 1
+            else:
+                self.__output_countdowns[plate] += 1
+            # print(self.__output_countdowns)
+
+            if self.__output_countdowns[plate] <= 0:
+                del self.__output_countdowns[plate]
+                self.__plate_set.add(plate)
+
+                dest = generate_hash20(f'{type(self).__name__}{plate}{time()}')
+                dests.append(dest)
+
+                key = next((k for k, v in self.__ret.items() if v == plate), None)
+
+                if key and orig_img is not None:
+                    frame_copy = orig_img.copy()
+
+                    bbox = bboxes[key]
+                    tl, br = list(map(int, bbox[0])), list(map(int, bbox[2]))
+
+                    frame_copy = put_text_ch(
+                        frame_copy,
+                        plate,
+                        (int(br[0]), int(tl[1] + 12)),
+                        .8,
+                        color=(0, 0, 255)
+                    )
+                    cv2.rectangle(frame_copy, tl, br, (0, 0, 255), thickness=2)
+
+                    cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
+
+            elif self.__output_countdowns[plate] >= self.__duration_frame_num + 10:
+                del self.__output_countdowns[plate]
+
+        return dests
+
+    @staticmethod
+    def __regularize(txt: str):
+        txt = txt.replace('·', '')
+        txt = txt.replace('l', '1')
+        txt = txt.replace('I', '1')
+        txt = txt.replace('O', '0')
+        txt = txt.replace('o', '0')
+
+        if not re.match(
+                r'^[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼使领][A-HJ-NP-Z][A-HJ-NP-Z0-9]{4,5}[A-HJ-NP-Z0-9挂学警港澳]$',
+                txt
+        ):
+            return ''
+
+        return txt
+
+    @staticmethod
+    def update_line(stats: int, subscript: int):
+        return stats, subscript + 1
+
+
+class TriangleDetector:
+    def __init__(
+            self,
+            duration_threshold: float,
+            fps: float
+    ):
+        self.__id_set = set()
+        self.__fps = fps
+        self.__duration_frame_num = max(round(duration_threshold * fps), 1)
+        self.__result_buffer = deque(maxlen=self.__duration_frame_num)
+        self.__triangle_counts = {}
+        self.__output_countdowns = {}
+
+    def update(
+            self,
+            result: Results
+    ) -> dict[float, bool]:
+        self.__result_buffer.append(result)
+
+        if result.boxes.id is None:
+            return {}
+
+        ret = {}
+
+        for i, idx in enumerate(result.boxes.id):
+            triangle = True
+
+            ret[idx] = triangle
+
+            if idx not in self.__id_set:
+                update_counts(
+                    triangle,
+                    True,
+                    idx,
+                    self.__triangle_counts,
+                    self.__output_countdowns,
+                    self.__duration_frame_num,
+                    1  # image instead of video
+                )
+
+        return ret
+
+    def plot(
+            self,
+            states: dict[float, str],
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
+            stats_line: int | None = 1,
+            subscript_line: int | None = 1
+    ) -> cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray:
+        result = deepcopy(self.__result_buffer[-1])
+
+        if frame is not None:
+            result.orig_img = frame
+
+        img = result.plot(conf=False, line_width=1)
+
+        for idx in states:
+            if not states[idx]:
+                continue
+
+            retrieve = np.where(result.boxes.id == idx)[0][0]
+            xyxy = result.boxes.xyxy[retrieve]
+            cv2.rectangle(
+                img,
+                (int(xyxy[0]), int(xyxy[1])),
+                (int(xyxy[2]), int(xyxy[3])),
+                color=(0, 0, 255),
+                thickness=2
+            )
+
+        return img
+
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
+        dests = []
+        result = self.__result_buffer[-1]
+
+        for idx in list(self.__output_countdowns.keys()):
+            self.__output_countdowns[idx] -= 1
+
+            if self.__output_countdowns[idx] <= 0:
+                del self.__output_countdowns[idx]
+                self.__id_set.add(idx)
+
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+                dests.append(dest)
+
+                retrieve = np.where(result.boxes.id == idx)[0]
+
+                if retrieve.shape[0] >= 1:
+                    frame_copy = result.orig_img.copy()
+                    list_idx = retrieve[0]
+
+                    xyxy = result.boxes.xyxy[list_idx]
+
+                    cv2.rectangle(
+                        frame_copy,
+                        (int(xyxy[0]), int(xyxy[1])),
+                        (int(xyxy[2]), int(xyxy[3])),
+                        (0, 0, 255),
+                        thickness=2
+                    )
+
+                    cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
+
+        return dests
+
+    @staticmethod
+    def update_line(stats: int, subscript: int):
+        return stats, subscript

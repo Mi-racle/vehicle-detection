@@ -35,7 +35,7 @@ def init_log(dir_name: str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', type=int, default=2)
+    parser.add_argument('-i', type=int, default=4)
     args = parser.parse_args()
 
     init_log('logs')
