@@ -42,7 +42,7 @@ class MainWindow(QMainWindow):
         self.central_widget.setLayout(layout)
 
         self.task: Thread | None = None
-        self.is_close = False
+        self.is_closed = False
 
     def is_alive(self):
         if self.task and self.task.is_alive():
@@ -150,7 +150,7 @@ class MainWindow(QMainWindow):
                 cap_in.set(cv2.CAP_PROP_POS_MSEC, task_entry['analysis_start_time'].total_seconds() * 1e3)
                 timer = timedelta(seconds=task_entry['analysis_start_time'].total_seconds())
 
-            while cap_in.isOpened() and not self.is_close:
+            while cap_in.isOpened() and not self.is_closed:
                 st0 = time()
 
                 ret, frame = cap_in.read()
@@ -201,8 +201,8 @@ class MainWindow(QMainWindow):
                     model = model_entries[group]
                     dargs = dets_args[group]
 
-                    det_ret = detector.update(results[group])
-                    plotted_frame = detector.plot(det_ret, plotted_frame, stats_line, subscript_line)
+                    detector.update(results[group])
+                    plotted_frame = detector.plot(plotted_frame, stats_line, subscript_line)
                     stats_line, subscript_line = detector.update_line(stats_line, subscript_line)
                     dests = detector.output_corpus(output_dir, frame)
 
@@ -261,6 +261,6 @@ class MainWindow(QMainWindow):
         self.task.start()
 
     def closeEvent(self, event):
-        self.is_close = True
+        self.is_closed = True
         self.task.join()
         sys.exit(0)

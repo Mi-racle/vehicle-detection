@@ -105,7 +105,7 @@ def cal_intersection_ratio(
     return intersection_area / box1_area if box1_area > 0 else 0
 
 
-def increment_path(dst_path: str, exist_ok=False, sep='', mkdir=False):
+def increment_path(dst_path: str, exist_ok=False, sep='', mkdir=True):
     """Increment file or directory path, i.e. runs/exp --> runs/exp{sep}2, runs/exp{sep}3, ... etc."""
     dst_path = Path(dst_path)  # os-agnostic
 

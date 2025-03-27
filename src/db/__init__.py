@@ -2,6 +2,7 @@ from db.camera import TblCameraDAO
 from db.group import TblGroupDAO
 from db.model import TblModelDAO
 from db.result import TblResultDAO
+from db.storage import ObsDAO
 from db.task_offline import TblTaskOfflineDAO
 from db.task_online import TblTaskOnlineDAO
 
@@ -14,3 +15,4 @@ TASK_OFFLINE_DAO = TblTaskOfflineDAO(DB_CONFIG_PATH)
 TASK_ONLINE_DAO = TblTaskOnlineDAO(DB_CONFIG_PATH)
 
 OBS_CONFIG_PATH = 'configs/obs_config.yaml'
+OBS_DAO = ObsDAO(OBS_CONFIG_PATH)

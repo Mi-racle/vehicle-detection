@@ -35,7 +35,7 @@ def init_log(dir_name: str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', type=int, default=4)
+    parser.add_argument('-i', type=int, default=6)
     args = parser.parse_args()
 
     init_log('logs')
@@ -51,8 +51,6 @@ if __name__ == '__main__':
     while True:
         if not window.is_alive():
             window.destroy()
-            break
+            sys.exit(0)
 
         cv2.waitKey(1000)
-
-    sys.exit(app.exec())

@@ -1,5 +1,6 @@
 import math
 import re
+from abc import ABC, abstractmethod
 from collections import deque
 from copy import deepcopy
 from time import time
@@ -7,16 +8,9 @@ from typing import Any
 
 import cv2
 import numpy as np
-import torch
-import yaml
-from PIL import Image
 from shapely.geometry.linestring import LineString
 from shapely.geometry.point import Point
 from shapely.geometry.polygon import Polygon
-from threadpoolctl import threadpool_limits
-from torchvision import transforms
-from torchvision.transforms import InterpolationMode
-from ultralytics import YOLO
 from ultralytics.engine.results import Results
 
 from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, \
@@ -24,7 +18,30 @@ from utils import cal_euclidean_distance, cal_intersection_points, cal_homograph
     generate_video, generate_hash20, put_text_ch
 
 
-class JamDetector:
+class Detector(ABC):
+    @abstractmethod
+    def update(self, result: Results | tuple[list, list] | tuple[list, list[list[str | float]]]): ...
+
+    @abstractmethod
+    def plot(
+            self,
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None,
+            stats_line: int | None = 1,
+            subscript_line: int | None = 1
+    ): ...
+
+    @abstractmethod
+    def output_corpus(
+            self,
+            output_dir: str,
+            orig_img=None
+    ): ...
+
+    @staticmethod
+    def update_line(stats: int, subscript: int): ...
+
+
+class JamDetector(Detector):
     def __init__(
             self,
             cls_indices: list,
@@ -45,18 +62,17 @@ class JamDetector:
     def update(
             self,
             result: Results
-    ) -> bool:
-        # TODO
+    ):
         self.__result_buffer.append(result)
 
         if self.__jam:
             self.__countdown -= 1
-            return True
+            return
 
         count = 0
 
         if result.boxes.id is None:
-            return False
+            return
 
         for i, idx in enumerate(result.boxes.id):
             center = Point(result.boxes.xywh[i][:2])
@@ -67,13 +83,10 @@ class JamDetector:
 
             if count >= self.__n_threshold:
                 self.__jam = True
-                return True
-
-        return False
+                return
 
     def plot(
             self,
-            state: bool,
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -88,7 +101,7 @@ class JamDetector:
         cv2.polylines(img, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
         cv2.putText(
             img,
-            f'Jam: {state}',
+            f'Jam: {self.__jam}',
             (0, 30 * stats_line),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
@@ -121,7 +134,7 @@ class JamDetector:
         return stats + 1, subscript
 
 
-class QueueDetector:
+class QueueDetector(Detector):
     def __init__(
             self,
             cls_indices: list,
@@ -136,8 +149,8 @@ class QueueDetector:
         self.__sampling_frame_num = max(round(sampling_period * fps), 1)
         self.__fps = fps
         self.__buffered_result: Results | None = None
-        self.__countdown = self.__sampling_frame_num
         self.__queue_length = 0
+        self.__countdown = self.__sampling_frame_num
 
         radian = math.pi * angle / 180
         rv0 = (0., 0.)
@@ -159,7 +172,7 @@ class QueueDetector:
     def update(
             self,
             result: Results
-    ) -> int:
+    ):
         self.__buffered_result = result
 
         head_point = ()
@@ -186,11 +199,8 @@ class QueueDetector:
 
         self.__countdown -= 1
 
-        return self.__queue_length
-
     def plot(
             self,
-            state: int,
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -205,7 +215,7 @@ class QueueDetector:
         cv2.polylines(img, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=5)
         cv2.putText(
             img,
-            f'Queue: {state}',
+            f'Queue: {self.__queue_length}',
             (0, 30 * stats_line),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
@@ -243,7 +253,7 @@ class QueueDetector:
         return stats + 1, subscript
 
 
-class DensityDetector:
+class DensityDetector(Detector):
     def __init__(
             self,
             cls_indices: list,
@@ -264,13 +274,13 @@ class DensityDetector:
     def update(
             self,
             result: Results
-    ) -> int:
+    ):
         self.__buffered_result = result
         self.__countdown -= 1
         self.__density = 0
 
         if self.__length_m <= 0:
-            return self.__density
+            return
 
         volume = 0
 
@@ -285,11 +295,8 @@ class DensityDetector:
 
         self.__density = volume / self.__length_m * 1e3
 
-        return self.__density
-
     def plot(
             self,
-            state: int,
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -304,7 +311,7 @@ class DensityDetector:
         cv2.polylines(img, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=5)
         cv2.putText(
             img,
-            f'Density: {state}',
+            f'Density: {self.__density}',
             (0, 30 * stats_line),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
@@ -342,7 +349,7 @@ class DensityDetector:
         return stats + 1, subscript
 
 
-class SizeDetector:
+class SizeDetector(Detector):
     def __init__(
             self,
             cls_indices: list,
@@ -351,30 +358,28 @@ class SizeDetector:
             delta_second: float,
             fps: float
     ):
-        self.__res = {}
+        self.__history_size = {}
         self.__cls_indices = cls_indices
         self.__det_line = det_line
         self.__thresholds = thresholds
         self.__result_buffer = deque(maxlen=max(round(delta_second * fps), 1))
         self.__counts = {}
         self.__output_countdowns = {}
+        self.__ret: dict[float, str] = {}
 
     def update(
             self,
             result: Results
-    ) -> dict[int, str]:
+    ):
         self.__result_buffer.append(result)
+        self.__ret = {}
 
         if result.boxes.id is None:
-            return {}
+            return
 
-        if len(self.__result_buffer) == 0:
-            return {idx: 'unknown' for idx in result.boxes.id}
-
-        ret = {}
         for i, idx in enumerate(result.boxes.id):
-            if self.__res.get(idx):
-                ret[idx] = self.__res[idx]
+            if self.__history_size.get(idx):
+                self.__ret[idx] = self.__history_size[idx]
                 continue
 
             if result.boxes.cls[i] not in self.__cls_indices:
@@ -408,7 +413,7 @@ class SizeDetector:
                 else:
                     size = 'large'
 
-                if idx not in self.__res:
+                if idx not in self.__history_size:
                     update_counts(
                         True,
                         True,
@@ -419,14 +424,11 @@ class SizeDetector:
                         1  # image instead of video
                     )
 
-                self.__res[idx] = size
-                ret[idx] = size
-
-        return ret
+                self.__history_size[idx] = size
+                self.__ret[idx] = size
 
     def plot(
             self,
-            states: dict[float, str],
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -440,10 +442,10 @@ class SizeDetector:
 
         cv2.line(img, self.__det_line[0], self.__det_line[1], color=(255, 0, 0), thickness=2)
 
-        for idx in states:
+        for idx in self.__ret:
             retrieve = np.where(result.boxes.id == idx)[0][0]
             xyxy = result.boxes.xyxy[retrieve]
-            state = states[idx]
+            state = self.__ret[idx]
             color = (200, 0, 0) if state == 'small' else (
                 (0, 200, 0) if state == 'medium' else (0, 0, 200)
             )
@@ -503,7 +505,7 @@ class SizeDetector:
         return stats, subscript + 1
 
 
-class SectionDetector:
+class SectionDetector(Detector):
     """ Section Volume Detector """
     def __init__(
             self,
@@ -525,12 +527,8 @@ class SectionDetector:
     def update(
             self,
             result: Results,
-    ) -> int:
+    ):
         self.__result_buffer.append(result)
-
-        if len(self.__result_buffer) == 0:
-            self.__text_buffer.append(f'Section volume: {len(self.__id_set)}')
-            return len(self.__id_set)
 
         ids = result.boxes.id if result.boxes.id is not None else []
         for i, idx in enumerate(ids):
@@ -559,11 +557,8 @@ class SectionDetector:
         self.__text_buffer.append(f'Section volume: {len(self.__id_set)}')
         self.__countdown -= 1
 
-        return len(self.__id_set)
-
     def plot(
             self,
-            state: int,
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -578,7 +573,7 @@ class SectionDetector:
         cv2.line(img, self.__det_line[0], self.__det_line[1], color=(0, 255, 0), thickness=2)
         cv2.putText(
             img,
-            f'Section volume: {state}',
+            f'Section volume: {len(self.__id_set)}',
             (0, 30 * stats_line),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
@@ -613,7 +608,7 @@ class SectionDetector:
         return stats + 1, subscript
 
 
-class VelocityDetector:
+class VelocityDetector(Detector):
     def __init__(
             self,
             cls_indices: list,
@@ -636,6 +631,7 @@ class VelocityDetector:
             maxlen=max(self.__delta_frame_num, self.__video_frame_num))
         self.__velocity_counts = {}
         self.__output_countdowns = {}
+        self.__ret: dict[float, str] = {}
 
         radian = math.pi * angle / 180
         rv0 = (0., 0.)
@@ -657,18 +653,14 @@ class VelocityDetector:
     def update(
             self,
             result: Results
-    ) -> dict[float, str]:
+    ):
         self.__result_buffer.append(result)
+        self.__ret = {}
 
         if result.boxes.id is None:
             self.__velocity_buffer.append({})
-            return {}
+            return
 
-        if len(self.__result_buffer) == 0:
-            self.__velocity_buffer.append({idx: f'0.0 km/h' for idx in result.boxes.id})
-            return {idx: '0.0 km/h' for idx in result.boxes.id}
-
-        ret = {}
         for i, idx in enumerate(result.boxes.id):
             center = Point(result.boxes.xywh[i][:2])
             if result.boxes.cls[i] not in self.__cls_indices or not Polygon(self.__det_zone).contains(center):
@@ -694,7 +686,7 @@ class VelocityDetector:
 
                     break
 
-            ret[idx] = f'{velocity:.3f} km/h'
+            self.__ret[idx] = f'{velocity:.3f} km/h'
 
             if idx not in self.__id_set:
                 update_counts(
@@ -707,13 +699,10 @@ class VelocityDetector:
                     self.__video_frame_num
                 )
 
-        self.__velocity_buffer.append(ret)
-
-        return ret
+        self.__velocity_buffer.append(self.__ret.copy())
 
     def plot(
             self,
-            states: dict[float, str],
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -727,10 +716,10 @@ class VelocityDetector:
 
         cv2.polylines(img, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
 
-        for idx in states:
+        for idx in self.__ret:
             retrieve = np.where(result.boxes.id == idx)[0][0]
             xyxy = result.boxes.xyxy[retrieve]
-            state = states[idx]
+            state = self.__ret[idx]
             cv2.putText(
                 img,
                 state,
@@ -771,7 +760,7 @@ class VelocityDetector:
         return stats, subscript + 1
 
 
-class VolumeDetector:
+class VolumeDetector(Detector):
     def __init__(
             self,
             cls_indices: list,
@@ -791,11 +780,15 @@ class VolumeDetector:
     def update(
             self,
             result: Results
-    ) -> int:
+    ):
         self.__buffered_result = result
+        self.__countdown -= 1
         self.__volume = 0
 
-        for i, xyxy in enumerate(result.boxes.xyxy):
+        if result.boxes.id is None:
+            return
+
+        for i, idx in enumerate(result.boxes.id):
             if result.boxes.cls[i] not in self.__cls_indices:
                 continue
 
@@ -804,13 +797,8 @@ class VolumeDetector:
             if Polygon(self.__det_zone).contains(center):
                 self.__volume += 1
 
-        self.__countdown -= 1
-
-        return self.__volume
-
     def plot(
             self,
-            state: int,
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -825,7 +813,7 @@ class VolumeDetector:
         cv2.polylines(img, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=5)
         cv2.putText(
             img,
-            f'Intersection volume: {state}',
+            f'Intersection volume: {self.__volume}',
             (0, 30 * stats_line),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
@@ -863,7 +851,7 @@ class VolumeDetector:
         return stats + 1, subscript
 
 
-class PimDetector:
+class PimDetector(Detector):
     def __init__(
             self,
             cls_indices: list,
@@ -881,17 +869,17 @@ class PimDetector:
         self.__result_buffer = deque(maxlen=self.__duration_frame_num)
         self.__pim_counts = {}
         self.__output_countdowns = {}
+        self.__ret: dict[float, bool] = {}
 
     def update(
             self,
             result: Results
-    ) -> dict[float, bool]:
+    ):
         self.__result_buffer.append(result)
+        self.__ret = {}
 
         if result.boxes.id is None:
-            return {}
-
-        ret = {}
+            return
 
         vehicle_retrieves = np.where(result.boxes.cls == self.__cls_indices[1])[0]
 
@@ -915,7 +903,7 @@ class PimDetector:
             if walking:
                 piming = Polygon(self.__motor_zone).contains(Point((xywh[0], xyxy[3])))  # bottom mid
 
-            ret[idx] = piming
+            self.__ret[idx] = piming
 
             if idx not in self.__id_set:
                 update_counts(
@@ -928,11 +916,8 @@ class PimDetector:
                     1  # image instead of video
                 )
 
-        return ret
-
     def plot(
             self,
-            states: dict[float, str],
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -946,10 +931,10 @@ class PimDetector:
 
         cv2.polylines(img, np.array([self.__motor_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
 
-        for idx in states:
+        for idx in self.__ret:
             retrieve = np.where(result.boxes.id == idx)[0][0]
             xyxy = result.boxes.xyxy[retrieve]
-            state = states[idx]
+            state = self.__ret[idx]
             cv2.putText(
                 img,
                 'breaking in' if state else '',
@@ -1007,7 +992,7 @@ class PimDetector:
         return stats, subscript + 1
 
 
-class ParkingDetector:
+class ParkingDetector(Detector):
     def __init__(
             self,
             cls_indices: list,
@@ -1018,7 +1003,7 @@ class ParkingDetector:
             displacement_threshold: float,
             fps: float
     ):
-        self.__model = YOLO('weights/yolo11s.pt')
+        self.__id_set = set()
         self.__cls_indices = cls_indices
         self.__noparking_zone = noparking_zone
         self.__displacement_threshold = displacement_threshold
@@ -1027,25 +1012,21 @@ class ParkingDetector:
         self.__duration_frame_num = max(round(duration_threshold * fps), 1)
         self.__video_frame_num = max(round(video_length * fps), 1)
         self.__result_buffer = deque(
-            maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num)
-        )
-        self.__id_set = set()
+            maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
         self.__parking_counts = {}
         self.__output_countdowns = {}
+        self.__ret: dict[float, str] = {}
 
     def update(
             self,
             result: Results
-    ) -> dict[float, str]:
+    ):
         self.__result_buffer.append(result)
+        self.__ret = {}
 
         if result.boxes.id is None:
-            return {}
+            return
 
-        if len(self.__result_buffer) == 0:
-            return {idx: 'unknown' for idx in result.boxes.id}
-
-        ret = {}
         for i, idx in enumerate(result.boxes.id):
             if result.boxes.cls[i] not in self.__cls_indices:
                 continue
@@ -1079,7 +1060,7 @@ class ParkingDetector:
 
                     break
 
-            ret[idx] = state
+            self.__ret[idx] = state
 
             if idx not in self.__id_set:
                 update_counts(
@@ -1092,11 +1073,8 @@ class ParkingDetector:
                     self.__video_frame_num
                 )
 
-        return ret
-
     def plot(
             self,
-            states: dict[float, str],
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -1110,10 +1088,10 @@ class ParkingDetector:
 
         cv2.polylines(img, np.array([self.__noparking_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
 
-        for idx in states:
+        for idx in self.__ret:
             retrieve = np.where(result.boxes.id == idx)[0][0]
             xyxy = result.boxes.xyxy[retrieve]
-            state = states[idx]
+            state = self.__ret[idx]
             color = (0, 0, 255) if state == 'illegally parked' else (0, 255, 0)
             cv2.putText(
                 img,
@@ -1154,7 +1132,7 @@ class ParkingDetector:
         return stats, subscript + 1
 
 
-class WrongwayDetector:
+class WrongwayDetector(Detector):
     def __init__(
             self,
             cls_indices: list,
@@ -1165,6 +1143,7 @@ class WrongwayDetector:
             fps: float,
             valid_direction='up'
     ):
+        self.__id_set = set()
         self.__cls_indices = cls_indices
         self.__det_zone = det_zone
         self.__fps = fps
@@ -1174,23 +1153,20 @@ class WrongwayDetector:
         self.__video_frame_num = max(round(video_length * fps), 1)
         self.__result_buffer = deque(
             maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__id_set = set()
         self.__wrongway_counts = {}
         self.__output_countdowns = {}
+        self.__ret: dict[float, dict] = {}
 
     def update(
             self,
             result: Results
-    ) -> dict[float, dict]:
+    ):
         self.__result_buffer.append(result)
+        self.__ret = {}
 
         if result.boxes.id is None:
-            return {}
+            return
 
-        if len(self.__result_buffer) == 0:
-            return {idx: {'vector': [0., 0.], 'wrongway': False} for idx in result.boxes.id}
-
-        ret = {}
         for i, idx in enumerate(result.boxes.id):
             if (
                     result.boxes.cls[i] not in self.__cls_indices or
@@ -1219,7 +1195,7 @@ class WrongwayDetector:
                     break
 
             wrongway = self.__is_wrongway(motion_vector)
-            ret[idx] = {'vector': motion_vector, 'wrongway': wrongway}
+            self.__ret[idx] = {'vector': motion_vector, 'wrongway': wrongway}
 
             if idx not in self.__id_set:
                 update_counts(
@@ -1232,11 +1208,8 @@ class WrongwayDetector:
                     self.__video_frame_num
                 )
 
-        return ret
-
     def plot(
             self,
-            states: dict[float, dict],
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             lstats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -1250,10 +1223,10 @@ class WrongwayDetector:
 
         cv2.polylines(img, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
 
-        for idx in states:
+        for idx in self.__ret:
             retrieve = np.where(result.boxes.id == idx)[0][0]
             xyxy = result.boxes.xyxy[retrieve]
-            state = states[idx]
+            state = self.__ret[idx]
             wrongway = state['wrongway']
             cv2.putText(
                 img,
@@ -1263,14 +1236,6 @@ class WrongwayDetector:
                 .4,
                 (0, 0, 255) if wrongway else (0, 255, 0)
             )
-            # xywh = result.boxes.xywh[retrieve]
-            # vector = state['vector']
-            # cv2.arrowedLine(
-            #     img,
-            #     (int(xywh[0]), int(xywh[1])),
-            #     (int(xywh[0] + 50 * vector[0]), int(xywh[1] + 50 * vector[1])),
-            #     color=color
-            # )
 
         return img
 
@@ -1314,7 +1279,7 @@ class WrongwayDetector:
         return stats, subscript + 1
 
 
-class LanechangeDetector:
+class LanechangeDetector(Detector):
     def __init__(
             self,
             cls_indices: list,
@@ -1338,20 +1303,18 @@ class LanechangeDetector:
         self.__solid_lines = [LineString(solid_line) for solid_line in solid_lines]
         self.__lanechange_counts = {}  # {id: count}
         self.__output_countdowns = {}
+        self.__ret: dict[float, bool] = {}
 
     def update(
             self,
             result: Results
-    ) -> dict[int, bool]:
+    ):
         self.__result_buffer.append(result)
+        self.__ret = {}
 
         if result.boxes.id is None:
-            return {}
+            return
 
-        if len(self.__result_buffer) == 0:
-            return {idx: False for idx in result.boxes.id}
-
-        ret = {}
         for i, idx in enumerate(result.boxes.id):
             center = Point(result.boxes.xywh[i][:2])
             if result.boxes.cls[i] not in self.__cls_indices or not Polygon(self.__det_zone).contains(center):
@@ -1378,7 +1341,7 @@ class LanechangeDetector:
 
                     break
 
-            ret[idx] = lanechange
+            self.__ret[idx] = lanechange
 
             if idx not in self.__id_set:
                 update_counts(
@@ -1391,11 +1354,8 @@ class LanechangeDetector:
                     self.__video_frame_num
                 )
 
-        return ret
-
     def plot(
             self,
-            states: dict[float, dict],
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -1418,10 +1378,10 @@ class LanechangeDetector:
                 thickness=2
             )
 
-        for idx in states:
+        for idx in self.__ret:
             retrieve = np.where(result.boxes.id == idx)[0][0]
             xyxy = result.boxes.xyxy[retrieve]
-            state = states[idx]
+            state = self.__ret[idx]
             cv2.putText(
                 img,
                 'changing' if state else 'staying',
@@ -1461,7 +1421,7 @@ class LanechangeDetector:
         return stats, subscript + 1
 
 
-class SpeedingDetector:
+class SpeedingDetector(Detector):
     def __init__(
             self,
             cls_indices: list,
@@ -1486,6 +1446,7 @@ class SpeedingDetector:
         self.__speed_threshold = speed_threshold
         self.__velocity_counts = {}
         self.__output_countdowns = {}
+        self.__ret: dict[float, str] = {}
 
         radian = math.pi * angle / 180
         rv0 = (0., 0.)
@@ -1507,16 +1468,13 @@ class SpeedingDetector:
     def update(
             self,
             result: Results
-    ) -> dict[float, str]:
+    ):
         self.__result_buffer.append(result)
+        self.__ret = {}
 
         if result.boxes.id is None:
-            return {}
+            return
 
-        if len(self.__result_buffer) == 0:
-            return {idx: 'not speeding (0 km/h)' for idx in result.boxes.id}
-
-        ret = {}
         for i, idx in enumerate(result.boxes.id):
             center = Point(result.boxes.xywh[i][:2])
             if result.boxes.cls[i] not in self.__cls_indices or not Polygon(self.__det_zone).contains(center):
@@ -1544,7 +1502,7 @@ class SpeedingDetector:
 
                     break
 
-            ret[idx] = ('speeding' if speeding else 'not speeding') + f' ({velocity:.3f} km/h)'
+            self.__ret[idx] = ('speeding' if speeding else 'not speeding') + f' ({velocity:.3f} km/h)'
 
             if idx not in self.__id_set:
                 update_counts(
@@ -1557,11 +1515,8 @@ class SpeedingDetector:
                     self.__video_frame_num
                 )
 
-        return ret
-
     def plot(
             self,
-            states: dict[float, str],
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -1575,10 +1530,10 @@ class SpeedingDetector:
 
         cv2.polylines(img, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
 
-        for idx in states:
+        for idx in self.__ret:
             retrieve = np.where(result.boxes.id == idx)[0][0]
             xyxy = result.boxes.xyxy[retrieve]
-            state = states[idx]
+            state = self.__ret[idx]
             cv2.putText(
                 img,
                 state,
@@ -1618,7 +1573,7 @@ class SpeedingDetector:
         return stats, subscript + 1
 
 
-class PlateDetector:
+class PlateDetector(Detector):
     def __init__(
             self,
             duration_threshold: float,
@@ -1628,48 +1583,53 @@ class PlateDetector:
         self.__fps = fps
         self.__duration_frame_num = max(round(duration_threshold * fps), 1)
         self.__result_buffer = deque(maxlen=self.__duration_frame_num)
+        self.__plate_counts = {}
         self.__output_countdowns = {}
-        self.__ret = {}
+        self.__ret: dict[int, str] = {}
 
     def update(
             self,
             result: tuple[list, list] | tuple[list, list[list[str | float]]]
-    ) -> dict[int, str]:
+    ):
         self.__result_buffer.append(result)
+        self.__ret = {}
 
         bboxes, rec_reses = result
         txts = [rec_reses[i][0] for i in range(len(rec_reses))]
         # scores = [rec_reses[i][1] for i in range(len(rec_reses))]
 
-        self.__ret = {}
-
         for i, bbox in enumerate(bboxes):
             txt: str = txts[i]
             txt = self.__regularize(txt)
 
-            if not txt or txt in self.__plate_set:
+            if not txt:  # txt is not valid plate license
                 continue
 
             self.__ret[i] = txt
 
-            if txt not in self.__output_countdowns:
-                self.__output_countdowns[txt] = self.__duration_frame_num
-
-        return self.__ret
+            if txt not in self.__plate_set:
+                update_counts(
+                    True,
+                    True,
+                    txt,
+                    self.__plate_counts,
+                    self.__output_countdowns,
+                    self.__duration_frame_num,
+                    1  # image instead of video
+                )
 
     def plot(
             self,
-            states: dict[int, str],
-            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
     ) -> cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray:
-        result = deepcopy(self.__result_buffer[-1])
+        result = self.__result_buffer[-1]
 
-        for idx in states:
+        for idx in self.__ret:
             bbox = result[0][idx]
             tl, br = list(map(int, bbox[0])), list(map(int, bbox[2]))
-            state = states[idx]
+            state = self.__ret[idx]
             frame = put_text_ch(
                 frame,
                 state,
@@ -1686,11 +1646,7 @@ class PlateDetector:
         bboxes = self.__result_buffer[-1][0]
 
         for plate in list(self.__output_countdowns.keys()):
-            if plate in self.__ret.values():
-                self.__output_countdowns[plate] -= 1
-            else:
-                self.__output_countdowns[plate] += 1
-            # print(self.__output_countdowns)
+            self.__output_countdowns[plate] -= 1
 
             if self.__output_countdowns[plate] <= 0:
                 del self.__output_countdowns[plate]
@@ -1718,9 +1674,6 @@ class PlateDetector:
 
                     cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
 
-            elif self.__output_countdowns[plate] >= self.__duration_frame_num + 10:
-                del self.__output_countdowns[plate]
-
         return dests
 
     @staticmethod
@@ -1744,7 +1697,7 @@ class PlateDetector:
         return stats, subscript + 1
 
 
-class TriangleDetector:
+class TriangleDetector(Detector):
     def __init__(
             self,
             duration_threshold: float,
@@ -1756,22 +1709,21 @@ class TriangleDetector:
         self.__result_buffer = deque(maxlen=self.__duration_frame_num)
         self.__triangle_counts = {}
         self.__output_countdowns = {}
+        self.__ret: dict[float, bool] = {}
 
     def update(
             self,
             result: Results
-    ) -> dict[float, bool]:
+    ):
         self.__result_buffer.append(result)
+        self.__ret = {}
 
         if result.boxes.id is None:
-            return {}
-
-        ret = {}
+            return
 
         for i, idx in enumerate(result.boxes.id):
             triangle = True
-
-            ret[idx] = triangle
+            self.__ret[idx] = triangle
 
             if idx not in self.__id_set:
                 update_counts(
@@ -1784,11 +1736,8 @@ class TriangleDetector:
                     1  # image instead of video
                 )
 
-        return ret
-
     def plot(
             self,
-            states: dict[float, str],
             frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
             stats_line: int | None = 1,
             subscript_line: int | None = 1
@@ -1800,8 +1749,8 @@ class TriangleDetector:
 
         img = result.plot(conf=False, line_width=1)
 
-        for idx in states:
-            if not states[idx]:
+        for idx in self.__ret:
+            if not self.__ret[idx]:
                 continue
 
             retrieve = np.where(result.boxes.id == idx)[0][0]
