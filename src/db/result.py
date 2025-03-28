@@ -7,29 +7,25 @@ from mysql.connector import Error
 
 class TblResultDAO:
     def __init__(self, config_path: str):
-        self.config_path = config_path
-        self.connection = mysql.connector.connect(
-            **yaml.safe_load(open(self.config_path, 'r'))
-        )
+        self.__config: dict = yaml.safe_load(open(config_path, 'r'))
+        self.__connection = mysql.connector.connect(**self.__config)
+        self.__TABLE_NAME = 'tbl_result'
 
     def __del__(self):
-        if self.connection and self.connection.is_connected():
-            self.connection.close()
+        if self.__connection and self.__connection.is_connected():
+            self.__connection.close()
 
     def insert_result(self, result):
         cursor = None
 
         try:
-            if self.connection.is_connected():
-                self.connection = mysql.connector.connect(
-                    **yaml.safe_load(open(self.config_path, 'r'))
-                )
+            if self.__connection.is_connected():
+                self.__connection = mysql.connector.connect(**self.__config)
 
-            cursor = self.connection.cursor(dictionary=True)
+            cursor = self.__connection.cursor(dictionary=True)
 
-            table = 'tbl_result'
             insert_query = f"""
-                INSERT INTO {table} (
+                INSERT INTO {self.__TABLE_NAME} (
                 model_name, model_version, camera_type, camera_id, video_type, 
                 source, dest, start_time, end_time, plate_no, locations
                 ) VALUES (
@@ -40,11 +36,11 @@ class TblResultDAO:
 
             result[-1] = str(result[-1])
             cursor.execute(insert_query, result)
-            self.connection.commit()
-            logging.info(f'Entry successfully inserted into {table}')
+            self.__connection.commit()
+            logging.info(f'Entry successfully inserted into {self.__TABLE_NAME}')
 
         except Error as e:
-            self.connection.rollback()
+            self.__connection.rollback()
             logging.error(f'Error: {e}')
 
         finally:
@@ -55,18 +51,15 @@ class TblResultDAO:
         cursor = None
 
         try:
-            if self.connection.is_connected():
-                self.connection = mysql.connector.connect(
-                    **yaml.safe_load(open(self.config_path, 'r'))
-                )
+            if self.__connection.is_connected():
+                self.__connection = mysql.connector.connect(**self.__config)
 
-            cursor = self.connection.cursor()
+            cursor = self.__connection.cursor()
 
-            table = 'tbl_result'
-            describe_query = f'''DESCRIBE {table}'''
+            describe_query = f'''DESCRIBE {self.__TABLE_NAME}'''
 
             cursor.execute(describe_query)
-            logging.info(f'Successfully described {table}')
+            logging.info(f'Successfully described {self.__TABLE_NAME}')
 
             return [column[0] for column in cursor.fetchall()]
 

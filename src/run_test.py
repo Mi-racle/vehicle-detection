@@ -7,7 +7,7 @@ from datetime import datetime
 import cv2
 from PyQt6.QtWidgets import QApplication
 
-from db import TASK_OFFLINE_DAO
+from db import TASK_OFFLINE_DAO, TASK_ONLINE_DAO
 from ui.main_window import MainWindow
 
 
@@ -35,7 +35,8 @@ def init_log(dir_name: str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', type=int, default=6)
+    parser.add_argument('-i', type=int, default=4)
+    parser.add_argument('--online', action='store_true')
     args = parser.parse_args()
 
     init_log('logs')
@@ -43,10 +44,16 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = MainWindow()
 
-    task = TASK_OFFLINE_DAO.get_offline_task_by_id(args.i)
+    if args.online:
+        task = TASK_ONLINE_DAO.get_online_task_by_id(args.i)
+    else:
+        task = TASK_OFFLINE_DAO.get_offline_task_by_id(args.i)
+
+    if not task:
+        exit(0)
 
     window.show()
-    window.run_offline(task, 'runs')
+    window.run_task(task, 'runs')
 
     while True:
         if not window.is_alive():

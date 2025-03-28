@@ -50,7 +50,7 @@ class MainWindow(QMainWindow):
 
         return False
 
-    def run_offline(
+    def run_task(
             self,
             task_entry: dict,
             output_dir: str
@@ -204,12 +204,12 @@ class MainWindow(QMainWindow):
                     detector.update(results[group])
                     plotted_frame = detector.plot(plotted_frame, stats_line, subscript_line)
                     stats_line, subscript_line = detector.update_line(stats_line, subscript_line)
-                    dests = detector.output_corpus(output_dir, frame)
+                    corpus_infos = detector.output_corpus(output_dir, frame)
 
-                    if not dests:
+                    if not corpus_infos:
                         continue
 
-                    for dest in dests:
+                    for corpus_info in corpus_infos:
                         if 'video_length' not in dargs:
                             start_time = timer
                             end_time = timer
@@ -230,10 +230,10 @@ class MainWindow(QMainWindow):
                             camera['camera_id'],
                             2,
                             task_entry['file_url'],
-                            dest,
+                            corpus_info['dest'],
                             start_time,
                             end_time,
-                            None,
+                            corpus_info['plate_no'],
                             []  # TODO
                         ]
                         self.display_window.add_info(entry)

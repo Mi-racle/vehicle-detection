@@ -47,7 +47,7 @@ if __name__ == '__main__':
                 break
 
             window.show()
-            window.run_offline(task, 'runs')
+            window.run_task(task, 'runs')
 
         cv2.waitKey(1000)
 

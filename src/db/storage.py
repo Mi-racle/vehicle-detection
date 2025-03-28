@@ -6,20 +6,20 @@ from obs import ObsClient
 
 class ObsDAO:
     def __init__(self, config_path: str):
-        self.obs_config: dict = yaml.safe_load(open(config_path, 'r'))
-        self.obs_client = ObsClient(
-            access_key_id=self.obs_config['access_key'],
-            secret_access_key=self.obs_config['access_secret'],
-            server=f'http://{self.obs_config['address']}',
-            port=self.obs_config['port']
+        self.__obs_config: dict = yaml.safe_load(open(config_path, 'r'))
+        self.__obs_client = ObsClient(
+            access_key_id=self.__obs_config['access_key'],
+            secret_access_key=self.__obs_config['access_secret'],
+            server=f'http://{self.__obs_config['address']}',
+            port=self.__obs_config['port']
         )
 
     def upload_file(self, file_path: str, object_key: str | None = None):
         resp = None
 
         try:
-            resp = self.obs_client.uploadFile(
-                bucketName=self.obs_config['bucket'],
+            resp = self.__obs_client.uploadFile(
+                bucketName=self.__obs_config['bucket'],
                 objectKey=object_key if object_key else os.path.basename(file_path),
                 uploadFile=file_path
             )
@@ -42,8 +42,8 @@ class ObsDAO:
         key = object_key if object_key else os.path.basename(download_path)
 
         try:
-            resp = self.obs_client.getObject(
-                bucketName=self.obs_config['bucket'],
+            resp = self.__obs_client.getObject(
+                bucketName=self.__obs_config['bucket'],
                 objectKey=key,
                 downloadPath=download_path
             )
@@ -65,8 +65,8 @@ class ObsDAO:
         resp = None
 
         try:
-            resp = self.obs_client.deleteObject(
-                bucketName=self.obs_config['bucket'],
+            resp = self.__obs_client.deleteObject(
+                bucketName=self.__obs_config['bucket'],
                 objectKey=object_key
             )
 
@@ -84,7 +84,7 @@ class ObsDAO:
                 print(f'Failed to delete {object_key}. Reason: unknown. Status: unknown')
 
     def list_buckets(self):
-        resp = self.obs_client.listBuckets()
+        resp = self.__obs_client.listBuckets()
 
         if resp.status < 300:
             print('Buckets: ')
@@ -96,10 +96,10 @@ class ObsDAO:
             print(f'Error in list_buckets: {resp.status}')
 
     def list_objects(self):
-        resp = self.obs_client.listObjects(bucketName=self.obs_config['bucket'])
+        resp = self.__obs_client.listObjects(bucketName=self.__obs_config['bucket'])
 
         if resp.status < 300:
-            print(f'Objects in bucket \'{self.obs_config['bucket']}\': ')
+            print(f'Objects in bucket \'{self.__obs_config['bucket']}\': ')
 
             for obj_dict in resp['body']['contents']:
                 print(obj_dict['key'])

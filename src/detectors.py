@@ -110,12 +110,12 @@ class JamDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
 
         if self.__countdown <= 0:
             dest = generate_hash20(f'{type(self).__name__}{time()}')
-            dests.append(dest)
+            corpus_infos.append({'dest': dest, 'plate_no': None})
 
             generate_video_generally(
                 f'{output_dir}/{dest}.mp4',
@@ -127,7 +127,7 @@ class JamDetector(Detector):
             self.__countdown = self.__video_frame_num
             self.__jam = False
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):
@@ -184,7 +184,6 @@ class QueueDetector(Detector):
 
             bm = (result.boxes.xywh[i][0], xyxy[-1])
 
-            # TODO
             if Polygon(self.__det_zone).contains(Point(bm)):
                 head_point = bm if not head_point else (head_point if head_point[1] <= bm[1] else bm)
                 tail_point = bm if not tail_point else (tail_point if tail_point[1] > bm[1] else bm)
@@ -224,13 +223,13 @@ class QueueDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
         frame_copy = self.__buffered_result.orig_img.copy()
 
         if self.__countdown <= 0:
             dest = generate_hash20(f'{type(self).__name__}{time()}')
-            dests.append(dest)
+            corpus_infos.append({'dest': dest, 'plate_no': None})
 
             cv2.polylines(frame_copy, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
             cv2.putText(
@@ -246,7 +245,7 @@ class QueueDetector(Detector):
 
             cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):
@@ -320,13 +319,13 @@ class DensityDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
         frame_copy = self.__buffered_result.orig_img.copy()
 
         if self.__countdown <= 0:
             dest = generate_hash20(f'{type(self).__name__}{time()}')
-            dests.append(dest)
+            corpus_infos.append({'dest': dest, 'plate_no': None})
 
             cv2.polylines(frame_copy, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
             cv2.putText(
@@ -342,7 +341,7 @@ class DensityDetector(Detector):
 
             cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):
@@ -467,8 +466,8 @@ class SizeDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
         result = self.__result_buffer[-1]
 
         for idx in list(self.__output_countdowns.keys()):
@@ -478,7 +477,7 @@ class SizeDetector(Detector):
                 del self.__output_countdowns[idx]
 
                 dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
-                dests.append(dest)
+                corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 retrieve = np.where(result.boxes.id == idx)[0]
 
@@ -498,7 +497,7 @@ class SizeDetector(Detector):
 
                     cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):
@@ -582,12 +581,12 @@ class SectionDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
 
         if self.__countdown <= 0:
             dest = generate_hash20(f'{type(self).__name__}{time()}')
-            dests.append(dest)
+            corpus_infos.append({'dest': dest, 'plate_no': None})
 
             generate_video_generally(
                 f'{output_dir}/{dest}.mp4',
@@ -601,7 +600,7 @@ class SectionDetector(Detector):
             self.__countdown = self.__video_frame_num
             self.__id_set.clear()
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):
@@ -731,8 +730,8 @@ class VelocityDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
 
         for idx in list(self.__output_countdowns.keys()):
             self.__output_countdowns[idx] -= 1
@@ -742,7 +741,7 @@ class VelocityDetector(Detector):
                 self.__id_set.add(idx)
 
                 dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
-                dests.append(dest)
+                corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
                     f'{output_dir}/{dest}.mp4',
@@ -753,7 +752,7 @@ class VelocityDetector(Detector):
                     self.__velocity_buffer
                 )
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):
@@ -822,13 +821,13 @@ class VolumeDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
         frame_copy = self.__buffered_result.orig_img.copy()
 
         if self.__countdown <= 0:
             dest = generate_hash20(f'{type(self).__name__}{time()}')
-            dests.append(dest)
+            corpus_infos.append({'dest': dest, 'plate_no': None})
 
             cv2.polylines(frame_copy, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
             cv2.putText(
@@ -844,7 +843,7 @@ class VolumeDetector(Detector):
 
             cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):
@@ -953,8 +952,8 @@ class PimDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
         result = self.__result_buffer[-1]
 
         for idx in list(self.__output_countdowns.keys()):
@@ -965,7 +964,7 @@ class PimDetector(Detector):
                 self.__id_set.add(idx)
 
                 dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
-                dests.append(dest)
+                corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 retrieve = np.where(result.boxes.id == idx)[0]
 
@@ -985,7 +984,7 @@ class PimDetector(Detector):
 
                     cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):
@@ -1104,8 +1103,8 @@ class ParkingDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
 
         for idx in list(self.__output_countdowns.keys()):
             self.__output_countdowns[idx] -= 1
@@ -1115,7 +1114,7 @@ class ParkingDetector(Detector):
                 self.__id_set.add(idx)
 
                 dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
-                dests.append(dest)
+                corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
                     f'{output_dir}/{dest}.mp4',
@@ -1125,7 +1124,7 @@ class ParkingDetector(Detector):
                     self.__video_frame_num
                 )
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):
@@ -1239,8 +1238,8 @@ class WrongwayDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
 
         for idx in list(self.__output_countdowns.keys()):
             self.__output_countdowns[idx] -= 1
@@ -1250,7 +1249,7 @@ class WrongwayDetector(Detector):
                 self.__id_set.add(idx)
 
                 dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
-                dests.append(dest)
+                corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
                     f'{output_dir}/{dest}.mp4',
@@ -1260,7 +1259,7 @@ class WrongwayDetector(Detector):
                     self.__video_frame_num
                 )
 
-        return dests
+        return corpus_infos
 
     def __is_wrongway(self, motion_vector: list[float]) -> bool:
         if self.__valid_direction == 'up':
@@ -1393,8 +1392,8 @@ class LanechangeDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
 
         for idx in list(self.__output_countdowns.keys()):
             self.__output_countdowns[idx] -= 1
@@ -1404,7 +1403,7 @@ class LanechangeDetector(Detector):
                 self.__id_set.add(idx)
 
                 dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
-                dests.append(dest)
+                corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
                     f'{output_dir}/{dest}.mp4',
@@ -1414,7 +1413,7 @@ class LanechangeDetector(Detector):
                     self.__video_frame_num
                 )
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):
@@ -1545,8 +1544,8 @@ class SpeedingDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
 
         for idx in list(self.__output_countdowns.keys()):
             self.__output_countdowns[idx] -= 1
@@ -1556,7 +1555,7 @@ class SpeedingDetector(Detector):
                 self.__id_set.add(idx)
 
                 dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
-                dests.append(dest)
+                corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
                     f'{output_dir}/{dest}.mp4',
@@ -1566,7 +1565,7 @@ class SpeedingDetector(Detector):
                     self.__video_frame_num
                 )
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):
@@ -1641,8 +1640,8 @@ class PlateDetector(Detector):
 
         return frame
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []  # [{'dest': ..., 'plate_no': ...}]
         bboxes = self.__result_buffer[-1][0]
 
         for plate in list(self.__output_countdowns.keys()):
@@ -1653,7 +1652,7 @@ class PlateDetector(Detector):
                 self.__plate_set.add(plate)
 
                 dest = generate_hash20(f'{type(self).__name__}{plate}{time()}')
-                dests.append(dest)
+                corpus_infos.append({'dest': dest, 'plate_no': plate})
 
                 key = next((k for k, v in self.__ret.items() if v == plate), None)
 
@@ -1674,7 +1673,7 @@ class PlateDetector(Detector):
 
                     cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def __regularize(txt: str):
@@ -1765,8 +1764,8 @@ class TriangleDetector(Detector):
 
         return img
 
-    def output_corpus(self, output_dir: str, orig_img=None) -> list[str]:
-        dests = []
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
         result = self.__result_buffer[-1]
 
         for idx in list(self.__output_countdowns.keys()):
@@ -1777,7 +1776,7 @@ class TriangleDetector(Detector):
                 self.__id_set.add(idx)
 
                 dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
-                dests.append(dest)
+                corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 retrieve = np.where(result.boxes.id == idx)[0]
 
@@ -1797,7 +1796,7 @@ class TriangleDetector(Detector):
 
                     cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
 
-        return dests
+        return corpus_infos
 
     @staticmethod
     def update_line(stats: int, subscript: int):

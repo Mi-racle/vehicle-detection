@@ -8,31 +8,27 @@ from mysql.connector import Error
 
 class TblGroupDAO:
     def __init__(self, config_path: str):
-        self.config_path = config_path
-        self.connection = mysql.connector.connect(
-            **yaml.safe_load(open(self.config_path, 'r'))
-        )
+        self.__config: dict = yaml.safe_load(open(config_path, 'r'))
+        self.__connection = mysql.connector.connect(**self.__config)
+        self._TABLE_NAME = 'tbl_group'
 
     def __del__(self):
-        if self.connection and self.connection.is_connected():
-            self.connection.close()
+        if self.__connection and self.__connection.is_connected():
+            self.__connection.close()
 
     def get_group_by_group_id(self, group_id: int):
         cursor = None
 
         try:
-            if self.connection.is_connected():
-                self.connection = mysql.connector.connect(
-                    **yaml.safe_load(open(self.config_path, 'r'))
-                )
+            if self.__connection.is_connected():
+                self.__connection = mysql.connector.connect(**self.__config)
 
-            cursor = self.connection.cursor(dictionary=True)
+            cursor = self.__connection.cursor(dictionary=True)
 
-            table = 'tbl_group'
-            query = f'''SELECT * FROM {table} WHERE group_id = %s'''
+            query = f'''SELECT * FROM {self._TABLE_NAME} WHERE group_id = %s'''
 
             cursor.execute(query, (group_id,))
-            logging.info(f'Entry successfully selected from {table}')
+            logging.info(f'Entry successfully selected from {self._TABLE_NAME}')
 
             group = cursor.fetchone()
             group['args'] = json.loads(group['args'])
