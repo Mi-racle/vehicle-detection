@@ -54,7 +54,7 @@ class TblTaskOfflineDAO:
 
             cursor = self.__connection.cursor(dictionary=True)
 
-            query = f'''SELECT * FROM {self.__TABLE_NAME} WHERE status = 0'''
+            query = f'''SELECT * FROM {self.__TABLE_NAME} WHERE status = 0 LIMIT 1'''
 
             cursor.execute(query)
             logging.info(f'Entry successfully selected from {self.__TABLE_NAME}')

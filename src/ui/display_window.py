@@ -61,7 +61,7 @@ class DisplayWindow(QWidget):
     def add_info(self, info: list):
         self.infos.append(info)
         self.combobox_label.setText(f'选择记录：（目前记录数{len(self.infos)}）')
-        self.object_combobox.addItem(info[6])
+        self.object_combobox.addItem(info[6])  # info[6] is dest
 
     def update_table(self):
         info = self.infos[self.object_combobox.currentIndex()]

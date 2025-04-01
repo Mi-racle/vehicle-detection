@@ -23,19 +23,10 @@ class Detector(ABC):
     def update(self, result: Results | tuple[list, list] | tuple[list, list[list[str | float]]]): ...
 
     @abstractmethod
-    def plot(
-            self,
-            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None,
-            stats_line: int | None = 1,
-            subscript_line: int | None = 1
-    ): ...
+    def plot(self, frame, stats_line: int | None = 1, subscript_line: int | None = 1): ...
 
     @abstractmethod
-    def output_corpus(
-            self,
-            output_dir: str,
-            orig_img=None
-    ): ...
+    def output_corpus(self, output_dir: str, orig_img=None): ...
 
     @staticmethod
     def update_line(stats: int, subscript: int): ...
@@ -377,7 +368,7 @@ class SizeDetector(Detector):
             return
 
         for i, idx in enumerate(result.boxes.id):
-            if self.__history_size.get(idx):
+            if idx in self.__history_size:
                 self.__ret[idx] = self.__history_size[idx]
                 continue
 
@@ -1795,6 +1786,91 @@ class TriangleDetector(Detector):
                     )
 
                     cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
+
+        return corpus_infos
+
+    @staticmethod
+    def update_line(stats: int, subscript: int):
+        return stats, subscript
+
+
+class ObjectDetector(Detector):
+    def __init__(
+            self,
+            cls_indices: list,
+            fps: float
+    ):
+        self.__id_set = set()
+        self.__cls_indices = cls_indices
+        self.__fps = fps
+        self.__result_buffer = []
+        self.__ret: dict[float, np.ndarray] = {}
+
+    def update(
+            self,
+            result: Results
+    ):
+        self.__ret = {}
+        self.__result_buffer.append(result)
+
+        if result.boxes.id is None:
+            return
+
+        for i, idx in enumerate(result.boxes.id):
+            if result.boxes.cls[i] not in self.__cls_indices or idx in self.__id_set:
+                continue
+
+            frame_height, frame_width = result.orig_img.shape[-3: -1]
+            xyxy = result.boxes.xyxy[i]
+
+            if (
+                xyxy[0] > 10 and
+                xyxy[1] > 10 and
+                xyxy[2] < frame_width - 10 and
+                xyxy[3] < frame_height - 10
+            ):
+                self.__ret[idx] = xyxy
+
+    def plot(
+            self,
+            frame: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None = None,
+            stats_line: int | None = 1,
+            subscript_line: int | None = 1
+    ) -> cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray:
+        result = deepcopy(self.__result_buffer[-1])
+
+        if frame is not None:
+            result.orig_img = frame
+
+        img = result.plot(conf=False, line_width=1)
+
+        for idx in self.__ret:
+            xyxy = self.__ret[idx]
+            cv2.rectangle(
+                img,
+                (int(xyxy[0]), int(xyxy[1])),
+                (int(xyxy[2]), int(xyxy[3])),
+                color=(0, 0, 255),
+                thickness=1
+            )
+
+        return img
+
+    def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
+        corpus_infos = []
+        result = self.__result_buffer[-1]
+
+        for idx in self.__ret:
+            self.__id_set.add(idx)
+
+            dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+            corpus_infos.append({'dest': dest, 'plate_no': None})
+
+            xyxy = self.__ret[idx]
+
+            frame_out = result.orig_img[int(xyxy[1]): int(xyxy[3]), int(xyxy[0]): int(xyxy[2])]
+
+            cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_out)
 
         return corpus_infos
 

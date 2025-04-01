@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 
 import mysql.connector
 import yaml
@@ -57,20 +58,27 @@ class TblTaskOnlineDAO:
 
             cursor = self.__connection.cursor(dictionary=True)
 
-            query = f'''SELECT * FROM {self.__TABLE_NAME} WHERE status = 0'''
+            query = f'''SELECT * FROM {self.__TABLE_NAME} WHERE excute_status = 0'''  # 'excute' is a typo in sql
 
             cursor.execute(query)
             logging.info(f'Entry successfully selected from {self.__TABLE_NAME}')
 
-            task = cursor.fetchone()
+            tasks = cursor.fetchall()
 
-            if task:
-                task['group_id'] = json.loads(task['group_id'])
-                task['analysis_start_time'] = task.pop('start_time')
-                task['analysis_end_time'] = task.pop('end_time')
-                task['status'] = task.pop('excute_status')  # 'excute' is a typo in sql
+            for task in tasks:
+                execute_date = datetime.combine(task['execute_date'], datetime.min.time())
+                start_datetime = execute_date + task['start_time']
+                end_datetime = execute_date + task['end_time']
 
-            return task
+                if start_datetime <= datetime.now() < end_datetime:
+                    task['group_id'] = json.loads(task['group_id'])
+                    task['analysis_start_time'] = task.pop('start_time')
+                    task['analysis_end_time'] = task.pop('end_time')
+                    task['status'] = task.pop('excute_status')  # 'excute' is a typo in sql
+
+                    return task
+
+            return None
 
         except Error as e:
             logging.info(f'Error: {e}')

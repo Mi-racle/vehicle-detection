@@ -3,19 +3,19 @@ import logging
 import os.path
 import sys
 import threading
-from datetime import timedelta
+from datetime import timedelta, datetime
 from threading import Thread
 from time import time, sleep
 from typing import Any
 
 import cv2
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QGridLayout
 from ultralytics import YOLO
 
-from db import CAMERA_DAO, GROUP_DAO, MODEL_DAO, RESULT_DAO, TASK_OFFLINE_DAO
+from db import CAMERA_DAO, GROUP_DAO, MODEL_DAO, RESULT_DAO, TASK_OFFLINE_DAO, TASK_ONLINE_DAO
 from detectors import ParkingDetector, WrongwayDetector, LanechangeDetector, SpeedingDetector, VelocityDetector, \
     PimDetector, SectionDetector, VolumeDetector, DensityDetector, QueueDetector, JamDetector, PlateDetector, \
-    TriangleDetector, SizeDetector
+    TriangleDetector, SizeDetector, ObjectDetector
 from ocr.ocrer import OCRer
 from ui.display_window import DisplayWindow
 from utils import in_analysis, get_file_by_substr
@@ -36,6 +36,7 @@ class MainWindow(QMainWindow):
 
         self.display_window = DisplayWindow()
 
+        layout = QGridLayout()
         layout = QVBoxLayout()
         layout.addWidget(self.display_window)
 
@@ -55,7 +56,21 @@ class MainWindow(QMainWindow):
             task_entry: dict,
             output_dir: str
     ):
-        cap_in = cv2.VideoCapture(task_entry['file_url'])
+        is_online = 'file_url' not in task_entry
+
+        if is_online:
+            video_url = CAMERA_DAO.get_camera_by_camera_id(
+                GROUP_DAO.get_group_by_group_id(
+                    task_entry['group_id'][0]
+                )['camera_id']
+            )['url']
+            update_task_status = TASK_ONLINE_DAO.update_online_task_status_by_id
+
+        else:
+            video_url = task_entry['file_url']
+            update_task_status = TASK_OFFLINE_DAO.update_offline_task_status_by_id
+
+        cap_in = cv2.VideoCapture(video_url)
         fps = cap_in.get(cv2.CAP_PROP_FPS)
 
         det_models: dict[str, dict[str, Any]] = {}
@@ -132,23 +147,29 @@ class MainWindow(QMainWindow):
                 detectors[group_id] = TriangleDetector(fps=fps, **det_args)
             elif 'size' in model_entry['model_name'].lower():
                 detectors[group_id] = SizeDetector(fps=fps, **det_args)
+            elif 'object' in model_entry['model_name'].lower():
+                detectors[group_id] = ObjectDetector(fps=fps, **det_args)
             else:
                 logging.info('Unknown model found')
-                TASK_OFFLINE_DAO.update_offline_task_status_by_id(task_entry['id'], -1)
+                update_task_status(task_entry['id'], -1)
                 cap_in.release()
                 return
 
         width = int(cap_in.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap_in.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap_out = cv2.VideoWriter('demo.mp4', cv2.VideoWriter.fourcc(*'mp4v'), fps, (width, height))
 
         def detect():
             end_as_designed = False
             timer = timedelta(seconds=1 / fps)
 
-            if task_entry['analysis_start_time']:
-                cap_in.set(cv2.CAP_PROP_POS_MSEC, task_entry['analysis_start_time'].total_seconds() * 1e3)
-                timer = timedelta(seconds=task_entry['analysis_start_time'].total_seconds())
+            if is_online:
+                now = datetime.now()
+                timer = timedelta(hours=now.hour, minutes=now.minute, seconds=now.second)
+
+            else:
+                if task_entry['analysis_start_time']:
+                    cap_in.set(cv2.CAP_PROP_POS_MSEC, task_entry['analysis_start_time'].total_seconds() * 1e3)
+                    timer = timedelta(seconds=task_entry['analysis_start_time'].total_seconds())
 
             while cap_in.isOpened() and not self.is_closed:
                 st0 = time()
@@ -228,18 +249,17 @@ class MainWindow(QMainWindow):
                             model['model_version'],
                             camera['type'],
                             camera['camera_id'],
-                            2,
-                            task_entry['file_url'],
+                            1 if is_online else 2,
+                            video_url,
                             corpus_info['dest'],
                             start_time,
                             end_time,
                             corpus_info['plate_no'],
-                            []  # TODO
+                            camera['matrix']  # TODO
                         ]
                         self.display_window.add_info(entry)
                         RESULT_DAO.insert_result(entry)
 
-                cap_out.write(plotted_frame)
                 self.display_window.set_image(plotted_frame)
 
                 timer += timedelta(seconds=1 / fps)
@@ -252,15 +272,19 @@ class MainWindow(QMainWindow):
                 sleep(max(1 / fps - total_cost, 0))
 
             cap_in.release()
-            cap_out.release()
 
             if end_as_designed:
-                TASK_OFFLINE_DAO.update_offline_task_status_by_id(task_entry['id'], 1)
+                update_task_status(task_entry['id'], 1)
+            else:
+                update_task_status(task_entry['id'], -1)
 
         self.task = threading.Thread(target=detect)
         self.task.start()
 
     def closeEvent(self, event):
         self.is_closed = True
-        self.task.join()
+
+        if self.task:
+            self.task.join()
+
         sys.exit(0)
