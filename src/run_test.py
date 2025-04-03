@@ -42,27 +42,9 @@ if __name__ == '__main__':
     init_log('logs')
 
     app = QApplication(sys.argv)
-    window = MainWindow()
-
-    # if args.online:
-    #     task = TASK_ONLINE_DAO.get_online_task_by_id(args.i)
-    # else:
-    #     task = TASK_OFFLINE_DAO.get_offline_task_by_id(args.i)
-
-    # task = TASK_ONLINE_DAO.get_online_task_by_id(args.i)
-    task = TASK_OFFLINE_DAO.get_offline_task_by_id(args.i)
-
-    if not task:
-        exit(0)
+    window = MainWindow('runs', True)
 
     window.show()
-    # window.run_task(task, 'runs')
-    #
-    # while True:
-    #     if not window.is_alive():
-    #         window.destroy()
-    #         sys.exit(0)
-    #
-    #     cv2.waitKey(1000)
+    window.func()
 
-    app.exec()
+    sys.exit(app.exec())

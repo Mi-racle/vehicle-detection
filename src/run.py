@@ -50,7 +50,7 @@ if __name__ == '__main__':
     window = MainWindow()
 
     while True:
-        if not window.is_alive():
+        if not window.is_task_alive():
             window.destroy()
 
             task = get_task()
@@ -58,7 +58,7 @@ if __name__ == '__main__':
                 continue
 
             window.show()
-            window.run_task(task, 'runs')
+            window.run_tasks(task, 'runs')
 
         cv2.waitKey(1000)
 

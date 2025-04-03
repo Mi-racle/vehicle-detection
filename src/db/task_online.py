@@ -12,6 +12,7 @@ class TblTaskOnlineDAO:
         self.__config: dict = yaml.safe_load(open(config_path, 'r'))
         self.__connection = mysql.connector.connect(**self.__config)
         self.__TABLE_NAME = 'tbl_task_run'
+        self.__INFO_TABLE_NAME = 'tbl_task_info'
 
     def __del__(self):
         if self.__connection and self.__connection.is_connected():
@@ -59,6 +60,7 @@ class TblTaskOnlineDAO:
             cursor = self.__connection.cursor(dictionary=True)
 
             query = f'''SELECT * FROM {self.__TABLE_NAME} WHERE excute_status = 0'''  # 'excute' is a typo in sql
+            info_query = f'''SELECT task_name FROM {self.__INFO_TABLE_NAME} WHERE id = %s'''
 
             cursor.execute(query)
             logging.info(f'Entry successfully selected from {self.__TABLE_NAME}')
@@ -71,14 +73,18 @@ class TblTaskOnlineDAO:
                 end_datetime = execute_date + task['end_time']
 
                 if start_datetime <= datetime.now() < end_datetime:
+                    cursor.execute(info_query, (task['id'],))
+
+                    fetched = cursor.fetchone()
+                    task['task_name'] = fetched['task_name'] if fetched else ''
                     task['group_id'] = json.loads(task['group_id'])
                     task['analysis_start_time'] = task.pop('start_time')
                     task['analysis_end_time'] = task.pop('end_time')
                     task['status'] = task.pop('excute_status')  # 'excute' is a typo in sql
 
-                    return task
+                    return [task]
 
-            return None
+            return []
 
         except Error as e:
             logging.info(f'Error: {e}')

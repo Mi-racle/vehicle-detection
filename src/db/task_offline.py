@@ -62,9 +62,10 @@ class TblTaskOfflineDAO:
             task = cursor.fetchone()
 
             if task:
+                task['task_name'] = task.pop('offline_task_name')
                 task['group_id'] = json.loads(task['group_id'])
 
-            return task
+            return [task]
 
         except Error as e:
             logging.info(f'Error: {e}')

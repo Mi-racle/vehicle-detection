@@ -105,11 +105,11 @@ class JamDetector(Detector):
         corpus_infos = []
 
         if self.__countdown <= 0:
-            dest = generate_hash20(f'{type(self).__name__}{time()}')
+            dest = generate_hash20(f'{type(self).__name__}{time()}') + '.mp4'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             generate_video_generally(
-                f'{output_dir}/{dest}.mp4',
+                f'{output_dir}/{dest}',
                 self.__result_buffer,
                 self.__fps,
                 color=(0, 0, 255)
@@ -219,7 +219,7 @@ class QueueDetector(Detector):
         frame_copy = self.__buffered_result.orig_img.copy()
 
         if self.__countdown <= 0:
-            dest = generate_hash20(f'{type(self).__name__}{time()}')
+            dest = generate_hash20(f'{type(self).__name__}{time()}') + '.jpg'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             cv2.polylines(frame_copy, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
@@ -234,7 +234,7 @@ class QueueDetector(Detector):
 
             self.__countdown = self.__sampling_frame_num
 
-            cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
+            cv2.imwrite(increment_path(f'{output_dir}/{dest}'), frame_copy)
 
         return corpus_infos
 
@@ -315,7 +315,7 @@ class DensityDetector(Detector):
         frame_copy = self.__buffered_result.orig_img.copy()
 
         if self.__countdown <= 0:
-            dest = generate_hash20(f'{type(self).__name__}{time()}')
+            dest = generate_hash20(f'{type(self).__name__}{time()}') + '.jpg'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             cv2.polylines(frame_copy, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
@@ -330,7 +330,7 @@ class DensityDetector(Detector):
 
             self.__countdown = self.__sampling_frame_num
 
-            cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
+            cv2.imwrite(increment_path(f'{output_dir}/{dest}'), frame_copy)
 
         return corpus_infos
 
@@ -467,7 +467,7 @@ class SizeDetector(Detector):
             if self.__output_countdowns[idx] <= 0:
                 del self.__output_countdowns[idx]
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.jpg'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 retrieve = np.where(result.boxes.id == idx)[0]
@@ -486,7 +486,7 @@ class SizeDetector(Detector):
                         thickness=2
                     )
 
-                    cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
+                    cv2.imwrite(increment_path(f'{output_dir}/{dest}'), frame_copy)
 
         return corpus_infos
 
@@ -576,11 +576,11 @@ class SectionDetector(Detector):
         corpus_infos = []
 
         if self.__countdown <= 0:
-            dest = generate_hash20(f'{type(self).__name__}{time()}')
+            dest = generate_hash20(f'{type(self).__name__}{time()}') + '.mp4'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             generate_video_generally(
-                f'{output_dir}/{dest}.mp4',
+                f'{output_dir}/{dest}',
                 self.__result_buffer,
                 self.__fps,
                 self.__det_line,
@@ -731,11 +731,11 @@ class VelocityDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
-                    f'{output_dir}/{dest}.mp4',
+                    f'{output_dir}/{dest}',
                     idx,
                     self.__result_buffer,
                     self.__fps,
@@ -817,7 +817,7 @@ class VolumeDetector(Detector):
         frame_copy = self.__buffered_result.orig_img.copy()
 
         if self.__countdown <= 0:
-            dest = generate_hash20(f'{type(self).__name__}{time()}')
+            dest = generate_hash20(f'{type(self).__name__}{time()}') + '.jpg'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             cv2.polylines(frame_copy, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
@@ -832,7 +832,7 @@ class VolumeDetector(Detector):
 
             self.__countdown = self.__sampling_frame_num
 
-            cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
+            cv2.imwrite(increment_path(f'{output_dir}/{dest}'), frame_copy)
 
         return corpus_infos
 
@@ -954,7 +954,7 @@ class PimDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.jpg'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 retrieve = np.where(result.boxes.id == idx)[0]
@@ -973,7 +973,7 @@ class PimDetector(Detector):
                         thickness=2
                     )
 
-                    cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
+                    cv2.imwrite(increment_path(f'{output_dir}/{dest}'), frame_copy)
 
         return corpus_infos
 
@@ -1104,11 +1104,11 @@ class ParkingDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
-                    f'{output_dir}/{dest}.mp4',
+                    f'{output_dir}/{dest}',
                     idx,
                     self.__result_buffer,
                     self.__fps,
@@ -1239,11 +1239,11 @@ class WrongwayDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
-                    f'{output_dir}/{dest}.mp4',
+                    f'{output_dir}/{dest}',
                     idx,
                     self.__result_buffer,
                     self.__fps,
@@ -1393,11 +1393,11 @@ class LanechangeDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
-                    f'{output_dir}/{dest}.mp4',
+                    f'{output_dir}/{dest}',
                     idx,
                     self.__result_buffer,
                     self.__fps,
@@ -1545,11 +1545,11 @@ class SpeedingDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
-                    f'{output_dir}/{dest}.mp4',
+                    f'{output_dir}/{dest}',
                     idx,
                     self.__result_buffer,
                     self.__fps,
@@ -1642,7 +1642,7 @@ class PlateDetector(Detector):
                 del self.__output_countdowns[plate]
                 self.__plate_set.add(plate)
 
-                dest = generate_hash20(f'{type(self).__name__}{plate}{time()}')
+                dest = generate_hash20(f'{type(self).__name__}{plate}{time()}') + '.jpg'
                 corpus_infos.append({'dest': dest, 'plate_no': plate})
 
                 key = next((k for k, v in self.__ret.items() if v == plate), None)
@@ -1662,7 +1662,7 @@ class PlateDetector(Detector):
                     )
                     cv2.rectangle(frame_copy, tl, br, (0, 0, 255), thickness=2)
 
-                    cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
+                    cv2.imwrite(increment_path(f'{output_dir}/{dest}'), frame_copy)
 
         return corpus_infos
 
@@ -1766,7 +1766,7 @@ class TriangleDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.jpg'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 retrieve = np.where(result.boxes.id == idx)[0]
@@ -1785,7 +1785,7 @@ class TriangleDetector(Detector):
                         thickness=2
                     )
 
-                    cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_copy)
+                    cv2.imwrite(increment_path(f'{output_dir}/{dest}'), frame_copy)
 
         return corpus_infos
 
@@ -1863,14 +1863,14 @@ class ObjectDetector(Detector):
         for idx in self.__ret:
             self.__id_set.add(idx)
 
-            dest = generate_hash20(f'{type(self).__name__}{idx}{time()}')
+            dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.jpg'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             xyxy = self.__ret[idx]
 
             frame_out = result.orig_img[int(xyxy[1]): int(xyxy[3]), int(xyxy[0]): int(xyxy[2])]
 
-            cv2.imwrite(increment_path(f'{output_dir}/{dest}.jpg'), frame_out)
+            cv2.imwrite(increment_path(f'{output_dir}/{dest}'), frame_out)
 
         return corpus_infos
 
