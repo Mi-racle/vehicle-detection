@@ -15,7 +15,7 @@ class TblResultDAO:
         if self.__connection and self.__connection.is_connected():
             self.__connection.close()
 
-    def insert_result(self, result):
+    def insert_result(self, result: dict):
         cursor = None
 
         try:
@@ -24,18 +24,12 @@ class TblResultDAO:
 
             cursor = self.__connection.cursor(dictionary=True)
 
-            insert_query = f"""
-                INSERT INTO {self.__TABLE_NAME} (
-                model_name, model_version, camera_type, camera_id, video_type, 
-                source, dest, start_time, end_time, plate_no, locations
-                ) VALUES (
-                %s, %s, %s, %s, %s, 
-                %s, %s, %s, %s, %s, %s
-                )
-            """
+            cols = ', '.join(result.keys())
+            placeholders = ', '.join(['%s'] * len(result))
+            insert_query = f'INSERT INTO {self.__TABLE_NAME} ({cols}) VALUES ({placeholders})'
 
-            result[-1] = str(result[-1])
-            cursor.execute(insert_query, result)
+            result['locations'] = str(result['locations'])
+            cursor.execute(insert_query, tuple(result.values()))
             self.__connection.commit()
             logging.info(f'Entry successfully inserted into {self.__TABLE_NAME}')
 

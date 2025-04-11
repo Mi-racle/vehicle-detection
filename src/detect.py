@@ -1,11 +1,11 @@
 import logging
 import os
-import threading
 from datetime import timedelta, datetime
 from time import time, sleep
-from typing import Any
+from typing import Any, Callable
 
 import cv2
+import numpy as np
 from ultralytics import YOLO
 
 from db import CAMERA_DAO, GROUP_DAO, TASK_ONLINE_DAO, TASK_OFFLINE_DAO, MODEL_DAO, RESULT_DAO
@@ -17,9 +17,11 @@ from utils import get_file_by_substr, in_analysis
 
 
 def detect(
-        main_window,
         task_entry: dict,
-        output_dir: str
+        output_dir: str,
+        is_closed: Callable[[], bool] | None = None,
+        append_corpus: Callable[[dict], None] | None = None,
+        set_umat: Callable[[cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray], None] | None = None,
 ):
     is_online = 'file_url' not in task_entry
 
@@ -135,7 +137,7 @@ def detect(
             cap_in.set(cv2.CAP_PROP_POS_MSEC, task_entry['analysis_start_time'].total_seconds() * 1e3)
             timer = timedelta(seconds=task_entry['analysis_start_time'].total_seconds())
 
-    while cap_in.isOpened() and not main_window.is_closed:
+    while cap_in.isOpened() and not (is_closed() if is_closed else False):
         st0 = time()
 
         ret, frame = cap_in.read()
@@ -208,24 +210,24 @@ def detect(
                     start_time = timer - td_video_length
                     end_time = timer - td_diff
 
-                entry = [
-                    model['model_name'],
-                    model['model_version'],
-                    camera['type'],
-                    camera['camera_id'],
-                    1 if is_online else 2,
-                    video_url,
-                    corpus_info['dest'],
-                    start_time,
-                    end_time,
-                    corpus_info['plate_no'],
-                    camera['matrix']  # TODO
-                ]
-                # self.display_widget.add_info(entry)
-                main_window.append_corpus(entry)
+                entry = {
+                    'model_name': model['model_name'],
+                    'model_version': model['model_version'],
+                    'camera_type': camera['type'],
+                    'camera_id': camera['camera_id'],
+                    'video_type': 1 if is_online else 2,
+                    'source': video_url,
+                    'dest': corpus_info['dest'],
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'plate_no': corpus_info['plate_no'],
+                    'locations': camera['matrix']  # TODO
+                }
+
+                append_corpus(entry) if append_corpus else None
                 RESULT_DAO.insert_result(entry)
 
-        main_window.major_display_label.set_umat(plotted_frame)
+        set_umat(plotted_frame) if set_umat else None
 
         timer += timedelta(seconds=1 / fps)
 
@@ -238,7 +240,4 @@ def detect(
 
     cap_in.release()
 
-    if end_as_designed:
-        update_task_status(task_entry['id'], 1)
-    else:
-        update_task_status(task_entry['id'], -1)
+    # update_task_status(task_entry['id'], 1 if end_as_designed else -1)

@@ -112,7 +112,7 @@ if __name__ == '__main__':
     obs_dao = ObsDAO('../configs/obs_config.yaml')
     obs_dao.list_buckets()
     obs_dao.list_objects()
-    # obs_dao.upload_file('test2.txt')
+    # obs_dao.upload_file('D:/xxs-signs/vehicle-detection/src/runs/0e99f93e2243dfeeff31.mp4', '0e99f93e2243dfeeff31.mp4')
     # obs_dao.download_file('test.txt')
     # obs_dao.delete_file('test2.txt')
     # obs_dao.list_objects()

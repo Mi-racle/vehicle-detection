@@ -78,6 +78,7 @@ class TblTaskOnlineDAO:
                     fetched = cursor.fetchone()
                     task['task_name'] = fetched['task_name'] if fetched else ''
                     task['group_id'] = json.loads(task['group_id'])
+                    task['create_time'] = start_datetime
                     task['analysis_start_time'] = task.pop('start_time')
                     task['analysis_end_time'] = task.pop('end_time')
                     task['status'] = task.pop('excute_status')  # 'excute' is a typo in sql

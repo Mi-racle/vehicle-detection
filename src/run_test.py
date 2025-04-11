@@ -5,6 +5,7 @@ import sys
 from datetime import datetime
 
 import cv2
+import yaml
 from PyQt6.QtWidgets import QApplication
 
 from db import TASK_OFFLINE_DAO, TASK_ONLINE_DAO
@@ -34,15 +35,12 @@ def init_log(dir_name: str):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-i', type=int, default=2)
-    parser.add_argument('--online', action='store_true')
-    args = parser.parse_args()
+    sys_config = yaml.safe_load(open(f'configs/sys_config.yaml', 'r'))
 
     init_log('logs')
 
     app = QApplication(sys.argv)
-    window = MainWindow('runs', True)
+    window = MainWindow(sys_config['output_dir'], sys_config['online'])
 
     window.show()
     window.func()
