@@ -1,4 +1,3 @@
-from time import sleep
 from typing import Optional, Callable
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -9,7 +8,6 @@ from ui.ui_utils import ScrollContainer
 
 
 class CorpusListWidget(QWidget):
-
     send_select_signal = pyqtSignal(dict)
     send_unselect_signal = pyqtSignal(object)
 
@@ -243,7 +241,7 @@ class CorpusListWidget(QWidget):
         self.__corpus_entries: dict[str, dict] = {}  # {corpus_name: corpus}
         self.__selected_item: CorpusListWidget.ScrollItemWidget | None = None
 
-        self.__scroll_test(5)
+        # self.__scroll_test(5)
 
     def add_corpus(self, corpus_entry: dict):
         item = CorpusListWidget.ScrollItemWidget(

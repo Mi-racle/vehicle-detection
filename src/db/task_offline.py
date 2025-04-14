@@ -54,18 +54,20 @@ class TblTaskOfflineDAO:
 
             cursor = self.__connection.cursor(dictionary=True)
 
-            query = f'''SELECT * FROM {self.__TABLE_NAME} WHERE status = 0 LIMIT 1'''
+            query = f'''SELECT * FROM {self.__TABLE_NAME} WHERE status = 0'''
 
             cursor.execute(query)
             logging.info(f'Entry successfully selected from {self.__TABLE_NAME}')
 
-            task = cursor.fetchone()
+            tasks = []
+            fetches = cursor.fetchall()
 
-            if task:
-                task['task_name'] = task.pop('offline_task_name')
-                task['group_id'] = json.loads(task['group_id'])
+            for fetch in fetches:
+                fetch['task_name'] = fetch.pop('offline_task_name')
+                fetch['group_id'] = json.loads(fetch['group_id'])
+                tasks.append(fetch)
 
-            return [task]
+            return tasks
 
         except Error as e:
             logging.info(f'Error: {e}')

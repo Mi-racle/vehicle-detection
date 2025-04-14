@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 import cv2
 import numpy as np
+from PyQt6.QtCore import pyqtSignal
 from ultralytics import YOLO
 
 from db import CAMERA_DAO, GROUP_DAO, TASK_ONLINE_DAO, TASK_OFFLINE_DAO, MODEL_DAO, RESULT_DAO
@@ -20,7 +21,7 @@ def detect(
         task_entry: dict,
         output_dir: str,
         is_closed: Callable[[], bool] | None = None,
-        append_corpus: Callable[[dict], None] | None = None,
+        append_corpus_signal: pyqtSignal | None = None,
         set_umat: Callable[[cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray], None] | None = None,
 ):
     is_online = 'file_url' not in task_entry
@@ -224,7 +225,7 @@ def detect(
                     'locations': camera['matrix']  # TODO
                 }
 
-                append_corpus(entry) if append_corpus else None
+                append_corpus_signal.emit(entry)
                 RESULT_DAO.insert_result(entry)
 
         set_umat(plotted_frame) if set_umat else None
@@ -240,4 +241,5 @@ def detect(
 
     cap_in.release()
 
+    # TODO for test (need uncomment)
     # update_task_status(task_entry['id'], 1 if end_as_designed else -1)

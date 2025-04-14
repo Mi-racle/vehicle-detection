@@ -1,7 +1,7 @@
 from typing import Optional
 
 import cv2
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout
 

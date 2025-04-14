@@ -1,14 +1,13 @@
 import sys
 import threading
 from collections import deque
-from threading import Thread
 from time import sleep
-from typing import Any
+from typing import Any, Callable
 
 import cv2
 import numpy as np
 import yaml
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, QTimer, QObject, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QWidget
 
@@ -22,6 +21,9 @@ from ui.title_bar import TitleBarWidget
 
 
 class MainWindow(QWidget):
+    __append_task_signal = pyqtSignal(str, str)
+    __append_corpus_signal = pyqtSignal(dict)
+
     def __init__(self, output_dir='', online=True):
         super().__init__()
 
@@ -69,26 +71,28 @@ class MainWindow(QWidget):
         self.__curr_task_entry: dict | None = None
         self.__task_queue = deque(maxlen=100)
         self.__task_queue_lock = threading.Lock()
-        self.__task_thread: Thread | None = None
-        self.__add_tasks_thread: Thread | None = None
-        self.__run_tasks_thread: Thread | None = None
+        self.__add_tasks_thread: QThread | None = None
+        self.__run_tasks_thread: QThread | None = None
         self.__closed = False
 
     def func(self):
-        self.__add_tasks_thread = threading.Thread(target=self.__add_tasks)
+        self.__add_tasks_thread = QThread()
+        self.__add_tasks_thread.run = lambda: self.__add_tasks()
+        self.__append_task_signal.connect(self.__append_task)
         self.__add_tasks_thread.start()
-        self.__run_tasks_thread = threading.Thread(target=self.__run_tasks)
+
+        self.__run_tasks_thread = QThread()
+        self.__run_tasks_thread.run = lambda: self.__run_tasks()
+        self.__append_corpus_signal.connect(self.__append_corpus)
         self.__run_tasks_thread.start()
 
     def closeEvent(self, event):
         self.__closed = True
 
-        if self.__task_thread:
-            self.__task_thread.join()
         if self.__add_tasks_thread:
-            self.__add_tasks_thread.join()
+            self.__add_tasks_thread.wait()
         if self.__run_tasks_thread:
-            self.__run_tasks_thread.join()
+            self.__run_tasks_thread.wait()
 
         sys.exit(0)
 
@@ -117,7 +121,7 @@ class MainWindow(QWidget):
                     # TODO need concat date and time
                     analysis_start_time = str(task_entry['analysis_start_time']) if task_entry[
                         'analysis_start_time'] else '0:00:00'
-                    self.__task_list.add_task(task_entry['task_name'], analysis_start_time)  # analysis start time
+                    self.__append_task_signal.emit(task_entry['task_name'], analysis_start_time)  # analysis start time
 
             sleep(1)
 
@@ -125,7 +129,7 @@ class MainWindow(QWidget):
         from detect import detect
 
         while not self.__closed:
-            if (self.__task_thread and self.__task_thread.is_alive()) or len(self.__task_queue) == 0:
+            if len(self.__task_queue) == 0:
                 sleep(1)
                 continue
 
@@ -134,20 +138,22 @@ class MainWindow(QWidget):
             self.__task_list.remove_task(0)
             self.__task_detail.set_task(self.__curr_task_entry)
 
-            self.__task_thread = threading.Thread(
-                target=detect,
-                args=(
-                    self.__curr_task_entry,
-                    self.__output_dir,
-                    self.__is_closed,
-                    self.__append_corpus,
-                    self.__set_umat
-                )
+            detect(
+                self.__curr_task_entry,
+                self.__output_dir,
+                self.__is_closed,
+                self.__append_corpus_signal,
+                self.__set_umat
             )
-            self.__task_thread.start()
+
+            self.__curr_task_entry = None
+            # TODO reset task_detail and major display
 
     def __is_closed(self):
         return self.__closed
+
+    def __append_task(self, task_name: str, start_time: str):
+        self.__task_list.add_task(task_name, start_time)
 
     def __append_corpus(self, entry: dict):
         self.__corpus_list.add_corpus(entry)
