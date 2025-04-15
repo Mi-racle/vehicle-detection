@@ -12,7 +12,7 @@ class TblTaskOnlineDAO:
         self.__config: dict = yaml.safe_load(open(config_path, 'r'))
         self.__connection = mysql.connector.connect(**self.__config)
         self.__TABLE_NAME = 'tbl_task_run'
-        self.__INFO_TABLE_NAME = 'tbl_task_info'
+        self.__TASK_INFO_DAO = TblTaskInfoDAO(config_path)
 
     def __del__(self):
         if self.__connection and self.__connection.is_connected():
@@ -50,7 +50,7 @@ class TblTaskOnlineDAO:
             if cursor:
                 cursor.close()
 
-    def get_next_online_task(self):
+    def get_next_online_tasks(self):
         cursor = None
 
         try:
@@ -60,32 +60,29 @@ class TblTaskOnlineDAO:
             cursor = self.__connection.cursor(dictionary=True)
 
             query = f'''SELECT * FROM {self.__TABLE_NAME} WHERE excute_status = 0'''  # 'excute' is a typo in sql
-            info_query = f'''SELECT task_name FROM {self.__INFO_TABLE_NAME} WHERE id = %s'''
 
             cursor.execute(query)
             logging.info(f'Entry successfully selected from {self.__TABLE_NAME}')
 
-            tasks = cursor.fetchall()
+            tasks = []
+            fetches = cursor.fetchall()
 
-            for task in tasks:
-                execute_date = datetime.combine(task['execute_date'], datetime.min.time())
-                start_datetime = execute_date + task['start_time']
-                end_datetime = execute_date + task['end_time']
+            for fetch in fetches:
+                execute_date = datetime.combine(fetch['execute_date'], datetime.min.time())
+                start_datetime = execute_date + fetch['start_time']
+                end_datetime = execute_date + fetch['end_time']
 
                 if start_datetime <= datetime.now() < end_datetime:
-                    cursor.execute(info_query, (task['id'],))
+                    task_info = self.__TASK_INFO_DAO.get_task_info_by_id(fetch['id'])
 
-                    fetched = cursor.fetchone()
-                    task['task_name'] = fetched['task_name'] if fetched else ''
-                    task['group_id'] = json.loads(task['group_id'])
-                    task['create_time'] = start_datetime
-                    task['analysis_start_time'] = task.pop('start_time')
-                    task['analysis_end_time'] = task.pop('end_time')
-                    task['status'] = task.pop('excute_status')  # 'excute' is a typo in sql
+                    fetch['task_name'] = task_info['task_name'] if task_info else ''
+                    fetch['group_id'] = json.loads(fetch['group_id'])
+                    fetch['create_time'] = start_datetime
+                    fetch['analysis_start_time'] = fetch.pop('start_time')
+                    fetch['analysis_end_time'] = fetch.pop('end_time')
+                    fetch['status'] = fetch.pop('excute_status')  # 'excute' is a typo in sql
 
-                    return [task]
-
-            return []
+            return tasks
 
         except Error as e:
             logging.info(f'Error: {e}')
@@ -109,6 +106,41 @@ class TblTaskOnlineDAO:
             cursor.execute(update_query, (status, task_id))
             self.__connection.commit()
             logging.info(f'{self.__TABLE_NAME} successfully updated')
+
+        except Error as e:
+            self.__connection.rollback()
+            logging.info(f'Error: {e}')
+
+        finally:
+            if cursor:
+                cursor.close()
+
+
+class TblTaskInfoDAO:
+    def __init__(self, config_path: str):
+        self.__config: dict = yaml.safe_load(open(config_path, 'r'))
+        self.__connection = mysql.connector.connect(**self.__config)
+        self.__TABLE_NAME = 'tbl_task_info'
+
+    def __del__(self):
+        if self.__connection and self.__connection.is_connected():
+            self.__connection.close()
+
+    def get_task_info_by_id(self, task_id: int):
+        cursor = None
+
+        try:
+            if self.__connection.is_connected():
+                self.__connection = mysql.connector.connect(**self.__config)
+
+            cursor = self.__connection.cursor(dictionary=True)
+
+            query = f'''SELECT * FROM {self.__TABLE_NAME} WHERE id = %s'''
+
+            cursor.execute(query, (task_id,))
+            logging.info(f'Entry successfully selected from {self.__TABLE_NAME}')
+
+            return cursor.fetchone()
 
         except Error as e:
             self.__connection.rollback()

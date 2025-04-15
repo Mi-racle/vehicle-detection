@@ -1,3 +1,4 @@
+import logging
 import os
 
 import yaml
@@ -13,6 +14,7 @@ class ObsDAO:
             server=f'http://{self.__obs_config['address']}',
             port=self.__obs_config['port']
         )
+        # TODO add queue
 
     def upload_file(self, file_path: str, object_key: str | None = None):
         resp = None
@@ -25,17 +27,17 @@ class ObsDAO:
             )
 
         except Exception as e:
-            print(e)
+            logging.error(e)
 
         finally:
             if resp:
                 if resp.status < 300:
-                    print(f'{file_path} uploaded successfully. ETag: {resp.body.etag}')
+                    logging.info(f'{file_path} uploaded successfully. ETag: {resp.body.etag}')
                 else:
-                    print(f'Failed to upload {file_path}. Reason: {resp.reason}. Status: {resp.status}')
+                    logging.info(f'Failed to upload {file_path}. Reason: {resp.reason}. Status: {resp.status}')
 
             else:
-                print(f'Failed to upload {file_path}. Reason: unknown. Status: unknown')
+                logging.error(f'Failed to upload {file_path}. Reason: unknown. Status: unknown')
 
     def download_file(self, download_path: str, object_key: str | None = None):
         resp = None
@@ -49,17 +51,17 @@ class ObsDAO:
             )
 
         except Exception as e:
-            print(e)
+            logging.error(e)
 
         finally:
             if resp:
                 if resp.status < 300:
-                    print(f'{key} downloaded successfully to {download_path}. ETag: {resp.body.etag}')
+                    logging.info(f'{key} downloaded successfully to {download_path}. ETag: {resp.body.etag}')
                 else:
-                    print(f'Failed to download {key}. Reason: {resp.reason}. Status: {resp.status}')
+                    logging.info(f'Failed to download {key}. Reason: {resp.reason}. Status: {resp.status}')
 
             else:
-                print(f'Failed to download {key}. Reason: unknown. Status: unknown')
+                logging.error(f'Failed to download {key}. Reason: unknown. Status: unknown')
 
     def delete_file(self, object_key: str):
         resp = None
@@ -71,26 +73,23 @@ class ObsDAO:
             )
 
         except Exception as e:
-            print(e)
+            logging.error(e)
 
         finally:
             if resp:
                 if resp.status < 300:
-                    print(f'{object_key} deleted successfully. ETag: {resp.body.etag}')
+                    logging.info(f'{object_key} deleted successfully. ETag: {resp.body.etag}')
                 else:
-                    print(f'Failed to delete {object_key}. Reason: {resp.reason}. Status: {resp.status}')
+                    logging.info(f'Failed to delete {object_key}. Reason: {resp.reason}. Status: {resp.status}')
 
             else:
-                print(f'Failed to delete {object_key}. Reason: unknown. Status: unknown')
+                logging.error(f'Failed to delete {object_key}. Reason: unknown. Status: unknown')
 
     def list_buckets(self):
         resp = self.__obs_client.listBuckets()
 
         if resp.status < 300:
-            print('Buckets: ')
-
-            for obj_dict in resp['body']['buckets']:
-                print(obj_dict['name'])
+            print(f'Buckets:', [obj_dict['name'] for obj_dict in resp['body']['buckets']])
 
         else:
             print(f'Error in list_buckets: {resp.status}')
@@ -112,7 +111,7 @@ if __name__ == '__main__':
     obs_dao = ObsDAO('../configs/obs_config.yaml')
     obs_dao.list_buckets()
     obs_dao.list_objects()
-    # obs_dao.upload_file('D:/xxs-signs/vehicle-detection/src/runs/0e99f93e2243dfeeff31.mp4', '0e99f93e2243dfeeff31.mp4')
+    # obs_dao.upload_file('test.txt')
     # obs_dao.download_file('test.txt')
     # obs_dao.delete_file('test2.txt')
     # obs_dao.list_objects()

@@ -45,7 +45,7 @@ class TblTaskOfflineDAO:
             if cursor:
                 cursor.close()
 
-    def get_next_offline_task(self):
+    def get_next_offline_tasks(self):
         cursor = None
 
         try:

@@ -7,7 +7,6 @@ import numpy as np
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QFontDatabase, QPixmap
 from PyQt6.QtWidgets import QWidget, QLabel
-from sympy.tensor.indexed import IndexException
 
 from ui.ui_utils import ImageLabel
 
@@ -255,49 +254,76 @@ class CorpusDetailWidget(QWidget):
         self.__display_title_tag_label.setStyleSheet(settings['display_title_tag_label_ss'])
         # display_title_group END
 
-        self.__display_label = ImageLabel(parent=self)
-        self.__display_label.setGeometry(16, 735, 418, 323)
-        self.__display_label.setText('未选定语料文件')
-        self.__display_label.setObjectName('displayLabel')
-        self.__display_label.setStyleSheet(
-            f'ImageLabel#{self.__display_label.objectName()} {{ {settings['display_label_ss']} }}')
+        display_group = QWidget(self)
+        display_group.setGeometry(16, 735, 418, 323)
+
+        # display_group BEGIN
+        self.__display_background = QLabel(display_group)
+        self.__display_background.setGeometry(0, 0, 418, 323)
+        self.__display_background.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        self.__display_background.setObjectName('displayBackground')
+        self.__display_background.setStyleSheet(
+            f'''
+            QLabel#{self.__display_background.objectName()} {{ 
+            background-image: url({settings['display_background_image']});
+            }}
+            '''
+        )
+
+        self.__display_label = ImageLabel(parent=display_group)
+        self.__display_label.setGeometry(0, 0, 418, 323)
+
+        loading_group = QWidget(display_group)
+        loading_group.setGeometry(119, 142, 181, 40)
+
+        # loading_group BEGIN
+        self.__loading_icon_label = QLabel(loading_group)
+        self.__loading_icon_label.setGeometry(0, 0, 40, 40)
+        self.__loading_icon_label.setPixmap(QPixmap(settings['loading_icon']))
+
+        self.__loading_tag_label = QLabel('未选定语料文件', loading_group)
+        self.__loading_tag_label.setGeometry(48, 11, 133, 18)
+        self.__loading_tag_label.setFont(font_siyuan_cn_regular)
+        self.__loading_tag_label.setStyleSheet(settings['loading_tag_label_ss'])
+        # loading_group END
+        # display_group END
 
         self.__corpus_dir = corpus_dir
 
     def set_corpus(self, corpus_entry: dict | None = None):
-        try:
-            if corpus_entry:
-                self.__corpus_name_label.setText(corpus_entry['dest'])
-                self.__model_label.setText(f'{corpus_entry['model_name']}v{corpus_entry['model_version']}')
-                self.__camera_id_label.setText(corpus_entry['camera_id'])
-                self.__video_type_label.setText('实时视频流' if int(corpus_entry['video_type']) == 1 else '视频文件')
-                self.__video_source_label.setText(corpus_entry['source'])
-                self.__start_time_label.setText(str(corpus_entry['start_time']))  # TODO may need concat date and time
-                self.__end_time_label.setText(str(corpus_entry['end_time']))  # TODO may need concat date and time
-                self.__plate_label.setText(corpus_entry['plate_no'] if corpus_entry['plate_no'] else '无')
-                self.__position_label.setText(corpus_entry['locations'])
-                umat = self.__capture_image(corpus_entry['dest'])
-                if umat is not None:
-                    self.__display_label.setUmat(umat)
-                else:
-                    self.__display_label.reset()  # should reset before setText
-                    self.__display_label.setText('未找到语料文件')
+        if corpus_entry:
+            self.__corpus_name_label.setText(corpus_entry['dest'])
+            self.__model_label.setText(f'{corpus_entry['model_name']}v{corpus_entry['model_version']}')
+            self.__camera_id_label.setText(corpus_entry['camera_id'])
+            self.__video_type_label.setText('实时视频流' if int(corpus_entry['video_type']) == 1 else '视频文件')
+            self.__video_source_label.setText(corpus_entry['source'])
+            self.__start_time_label.setText(str(corpus_entry['start_time']))  # TODO may need concat date and time
+            self.__end_time_label.setText(str(corpus_entry['end_time']))  # TODO may need concat date and time
+            self.__plate_label.setText(corpus_entry['plate_no'] if corpus_entry['plate_no'] else '无')
+            self.__position_label.setText(corpus_entry['locations'])
+            self.__loading_icon_label.setVisible(False)
+            self.__loading_tag_label.setVisible(False)
+            umat = self.__capture_image(corpus_entry['dest'])
+            if umat is not None:
+                self.__display_label.setUmat(umat)
+            else:
+                self.__loading_tag_label.setText('未找到语料文件')
+                self.__display_label.reset()
 
-            else:  # reset
-                self.__corpus_name_label.setText('未选定语料文件')
-                self.__model_label.setText('-')
-                self.__camera_id_label.setText('-')
-                self.__video_type_label.setText('-')
-                self.__video_source_label.setText('-')
-                self.__start_time_label.setText('-')
-                self.__end_time_label.setText('-')
-                self.__plate_label.setText('-')
-                self.__position_label.setText('-')
-                self.__display_label.reset()  # should reset before setText
-                self.__display_label.setText('未选定语料文件')
-
-        except IndexException as ie:
-            print(ie)
+        else:  # reset
+            self.__corpus_name_label.setText('未选定语料文件')
+            self.__model_label.setText('-')
+            self.__camera_id_label.setText('-')
+            self.__video_type_label.setText('-')
+            self.__video_source_label.setText('-')
+            self.__start_time_label.setText('-')
+            self.__end_time_label.setText('-')
+            self.__plate_label.setText('-')
+            self.__position_label.setText('-')
+            self.__loading_icon_label.setVisible(True)
+            self.__loading_tag_label.setVisible(True)
+            self.__loading_tag_label.setText('未选定语料文件')
+            self.__display_label.reset()
 
     def __capture_image(self, dest: str) -> cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray | None:
         corpus_path = f'{self.__corpus_dir}/{dest}'

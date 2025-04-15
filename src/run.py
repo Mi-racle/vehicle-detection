@@ -40,9 +40,9 @@ if __name__ == '__main__':
 
     # args.online = True
     if args.online:
-        get_task = TASK_ONLINE_DAO.get_next_online_task
+        get_task = TASK_ONLINE_DAO.get_next_online_tasks
     else:
-        get_task = TASK_OFFLINE_DAO.get_next_offline_task
+        get_task = TASK_OFFLINE_DAO.get_next_offline_tasks
 
     init_log('logs')
 

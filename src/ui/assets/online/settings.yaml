@@ -56,7 +56,10 @@ task_list:
     dashed_line_ss: 'border: 1px dashed #90B3DE;'
 
 major_display:
-  display_label_ss: 'background-color: grey; border-radius: 5px;'
+  font_siyuan_cn_regular: 'ui/assets/online/SourceHanSansCN-Regular.ttf'
+  background_image: 'ui/assets/online/mid-pic.png'
+  loading_icon: 'ui/assets/online/loading.png'
+  loading_tag_label_ss: 'font-weight: 400; font-size: 18px; color: #333333; line-height: 27px; text-align: left; font-style: normal;'
 
 corpus_list:
   font_siyuan_cn_bold: 'ui/assets/online/SourceHanSansCN-Bold.ttf'
@@ -131,4 +134,12 @@ corpus_detail:
   position_label_ss: 'font-weight: 400; font-size: 16px; color: #333333; line-height: 24px; text-align: right; font-style: normal;'
   vertical_line2: 'ui/assets/online/verline2.png'
   display_title_tag_label_ss: 'font-weight: bold; font-size: 18px; color: #1474F4; line-height: 27px; text-align: left; font-style: normal;'
-  display_label_ss: 'background-color: grey; border-radius: 5px;'
+  display_background_image: 'ui/assets/online/p-2.png'
+  loading_icon: 'ui/assets/online/loading.png'
+  loading_tag_label_ss: 'font-weight: 400; font-size: 18px; color: #333333; line-height: 27px; text-align: left; font-style: normal;'
+
+tray:
+  tray_icon: 'ui/assets/online/AI-9.png'
+
+exit_dialog:
+  placeholder: 'placeholder'

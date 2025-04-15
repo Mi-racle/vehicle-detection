@@ -9,7 +9,7 @@ import numpy as np
 from PyQt6.QtCore import pyqtSignal
 from ultralytics import YOLO
 
-from db import CAMERA_DAO, GROUP_DAO, TASK_ONLINE_DAO, TASK_OFFLINE_DAO, MODEL_DAO, RESULT_DAO
+from db import CAMERA_DAO, GROUP_DAO, TASK_ONLINE_DAO, TASK_OFFLINE_DAO, MODEL_DAO, RESULT_DAO, OBS_DAO
 from detectors import ParkingDetector, WrongwayDetector, LanechangeDetector, SpeedingDetector, VelocityDetector, \
     PimDetector, SectionDetector, VolumeDetector, DensityDetector, QueueDetector, JamDetector, PlateDetector, \
     TriangleDetector, SizeDetector, ObjectDetector
@@ -138,7 +138,7 @@ def detect(
             cap_in.set(cv2.CAP_PROP_POS_MSEC, task_entry['analysis_start_time'].total_seconds() * 1e3)
             timer = timedelta(seconds=task_entry['analysis_start_time'].total_seconds())
 
-    while cap_in.isOpened() and not (is_closed() if is_closed else False):
+    while cap_in.isOpened() and not (is_closed and is_closed()):
         st0 = time()
 
         ret, frame = cap_in.read()
@@ -168,6 +168,7 @@ def detect(
                     persist=True,
                     verbose=False,
                     device=0,
+                    # device='cpu',
                     classes=values['classes']
                 )[0].cpu().numpy()
             elif isinstance(det_model, OCRer):
@@ -225,10 +226,12 @@ def detect(
                     'locations': camera['matrix']  # TODO
                 }
 
-                append_corpus_signal.emit(entry)
-                RESULT_DAO.insert_result(entry)
+                append_corpus_signal.emit(entry)  # Update ui
+                RESULT_DAO.insert_result(entry)  # Update sql
+                # TODO for test. Need uncomment.
+                # OBS_DAO.upload_file(f'{output_dir}/{entry['dest']}')  # Update obs
 
-        set_umat(plotted_frame) if set_umat else None
+        set_umat and set_umat(plotted_frame)
 
         timer += timedelta(seconds=1 / fps)
 
@@ -241,5 +244,5 @@ def detect(
 
     cap_in.release()
 
-    # TODO for test (need uncomment)
-    # update_task_status(task_entry['id'], 1 if end_as_designed else -1)
+    # TODO for test. Need uncomment.
+    update_task_status(task_entry['id'], 1 if end_as_designed else -1)

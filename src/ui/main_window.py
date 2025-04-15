@@ -2,48 +2,46 @@ import sys
 import threading
 from collections import deque
 from time import sleep
-from typing import Any, Callable
+from typing import Any
 
 import cv2
 import numpy as np
 import yaml
-from PyQt6.QtCore import Qt, QThread, QTimer, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QWidget, QDialog
 
 from db import TASK_ONLINE_DAO, TASK_OFFLINE_DAO
 from ui.corpus_detail import CorpusDetailWidget
 from ui.corpus_list import CorpusListWidget
+from ui.exit_dialog import ExitDialog
 from ui.major_display import MajorDisplayWidget
 from ui.task_detail import TaskDetailWidget
 from ui.task_list import TaskListWidget
 from ui.title_bar import TitleBarWidget
+from ui.tray import Tray
 
 
 class MainWindow(QWidget):
     __append_task_signal = pyqtSignal(str, str)
     __append_corpus_signal = pyqtSignal(dict)
+    __reset_display_signal = pyqtSignal()
 
     def __init__(self, output_dir='', online=True):
         super().__init__()
-
-        # user32 = ctypes.windll.user32
-        # screen_width, screen_height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
 
         window_title = f'视觉AI语料库{'在' if online else '离'}线平台'
         gui_settings: dict = yaml.safe_load(open(f'ui/assets/{'on' if online else 'off'}line/settings.yaml', 'r'))
         settings = gui_settings['main_window']
 
+        self.setGeometry(0, 0, 1920, 1202)
         self.setWindowIcon(QIcon(settings['window_icon']))
         self.setWindowTitle(window_title)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
-        self.setGeometry(0, 0, 1920, 1202)
-
-        self.__background = QWidget(self)
-        self.__background.setGeometry(0, 0, 1920, 1202)
-        self.__background.setObjectName('mainWindowBackground')
-        self.__background.setStyleSheet(
-            f'QWidget#{self.__background.objectName()} {{background-image: url({settings['background_image']});}}')
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        self.setObjectName('mainWindow')
+        self.setStyleSheet(
+            f'{type(self).__name__}#{self.objectName()} {{background-image: url({settings['background_image']});}}')
 
         self.__title_bar = TitleBarWidget(gui_settings['title_bar'], window_title, self)
         self.__title_bar.setGeometry(0, 0, 1920, 64)
@@ -63,17 +61,24 @@ class MainWindow(QWidget):
         self.__corpus_detail = CorpusDetailWidget(gui_settings['corpus_detail'], output_dir, self)
         self.__corpus_detail.setGeometry(1450, 84, 450, 1098)
 
+        self.__tray = Tray(gui_settings['tray'], self)
+
+        self.__exit_dialog = ExitDialog(gui_settings['exit_dialog'])
+
         self.__corpus_list.send_select_signal.connect(self.__corpus_detail.set_corpus)
         self.__corpus_list.send_unselect_signal.connect(self.__corpus_detail.set_corpus)
+        self.__tray.close_signal.connect(self.__safe_close)
 
         self.__output_dir = output_dir
         self.__online = online
         self.__curr_task_entry: dict | None = None
+        self.__curr_task_lock = threading.Lock()
         self.__task_queue = deque(maxlen=100)
         self.__task_queue_lock = threading.Lock()
         self.__add_tasks_thread: QThread | None = None
         self.__run_tasks_thread: QThread | None = None
         self.__closed = False
+        self.__exit_dialog_state = ExitDialog.NOT_REMEMBER
 
     def func(self):
         self.__add_tasks_thread = QThread()
@@ -84,9 +89,34 @@ class MainWindow(QWidget):
         self.__run_tasks_thread = QThread()
         self.__run_tasks_thread.run = lambda: self.__run_tasks()
         self.__append_corpus_signal.connect(self.__append_corpus)
+        self.__reset_display_signal.connect(self.__reset_display)
         self.__run_tasks_thread.start()
 
     def closeEvent(self, event):
+        if self.__exit_dialog_state == ExitDialog.NOT_REMEMBER:
+            if self.__exit_dialog.exec() == QDialog.DialogCode.Accepted:
+                self.__exit_dialog_state = self.__exit_dialog.get_choice()
+
+                if self.__exit_dialog_state == ExitDialog.EXIT:
+                    self.__safe_close()
+                elif self.__exit_dialog_state == ExitDialog.HIDE:
+                    event.ignore()
+                    self.hide()
+
+                if not self.__exit_dialog.remember_choice():
+                    self.__exit_dialog_state = ExitDialog.NOT_REMEMBER
+
+            else:
+                event.ignore()
+
+        elif self.__exit_dialog_state == ExitDialog.EXIT:
+            self.__safe_close()
+
+        elif self.__exit_dialog_state == ExitDialog.HIDE:
+            event.ignore()
+            self.hide()
+
+    def __safe_close(self):
         self.__closed = True
 
         if self.__add_tasks_thread:
@@ -99,13 +129,14 @@ class MainWindow(QWidget):
     def __add_tasks(self):
         while not self.__closed:
             if self.__online:
-                task_entries = TASK_ONLINE_DAO.get_next_online_task()
+                task_entries = TASK_ONLINE_DAO.get_next_online_tasks()
             else:
-                task_entries = TASK_OFFLINE_DAO.get_next_offline_task()
+                task_entries = TASK_OFFLINE_DAO.get_next_offline_tasks()
 
             for task_entry in task_entries:
-                if self.__curr_task_entry and self.__curr_task_entry['id'] == task_entry['id']:
-                    continue
+                with self.__curr_task_lock:
+                    if self.__curr_task_entry and self.__curr_task_entry['id'] == task_entry['id']:
+                        continue
 
                 repeated = False
 
@@ -143,11 +174,13 @@ class MainWindow(QWidget):
                 self.__output_dir,
                 self.__is_closed,
                 self.__append_corpus_signal,
-                self.__set_umat
+                self.__set_display
             )
 
-            self.__curr_task_entry = None
-            # TODO reset task_detail and major display
+            with self.__curr_task_lock:
+                self.__curr_task_entry = None
+            self.__task_detail.set_task(None)
+            self.__reset_display_signal.emit()
 
     def __is_closed(self):
         return self.__closed
@@ -158,5 +191,8 @@ class MainWindow(QWidget):
     def __append_corpus(self, entry: dict):
         self.__corpus_list.add_corpus(entry)
 
-    def __set_umat(self, umat: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray):
+    def __set_display(self, umat: cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray):
         self.__major_display.set_umat(umat)
+
+    def __reset_display(self):
+        self.__major_display.reset()

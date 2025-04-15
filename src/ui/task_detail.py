@@ -195,11 +195,21 @@ class TaskDetailWidget(QWidget):
         self.__creation_time_label.setStyleSheet(settings['creation_time_label_ss'])
         # creation_time_group END
 
-    def set_task(self, task_entry: dict):
-        self.__task_name_label.setText(task_entry['task_name'])
-        self.__camera_position_label.setText('TBD')  # description TODO
-        self.__video_source_label.setText('TBD')  # url TODO
-        self.__creation_time_label.setText(str(task_entry['create_time']))
-        self.__start_time_label.setText(str(task_entry['analysis_start_time']))
-        self.__end_time_label.setText(str(task_entry['analysis_end_time']))
-        self.__detection_name_label.setText(str(task_entry['group_id']))  # TODO
+    def set_task(self, task_entry: dict | None = None):
+        if task_entry:
+            self.__task_name_label.setText(task_entry['task_name'])
+            self.__camera_position_label.setText('TBD')  # description TODO
+            self.__video_source_label.setText('TBD')  # url TODO
+            self.__creation_time_label.setText(str(task_entry['create_time']))
+            self.__start_time_label.setText(str(task_entry['analysis_start_time']))
+            self.__end_time_label.setText(str(task_entry['analysis_end_time']))
+            self.__detection_name_label.setText(str(task_entry['group_id']))  # TODO
+
+        else:  # reset
+            self.__task_name_label.setText('等待任务中')
+            self.__camera_position_label.setText('-')
+            self.__video_source_label.setText('-')
+            self.__creation_time_label.setText('-')
+            self.__start_time_label.setText('-')
+            self.__end_time_label.setText('-')
+            self.__detection_name_label.setText('-')
