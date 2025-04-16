@@ -262,13 +262,11 @@ class CorpusDetailWidget(QWidget):
         self.__display_background.setGeometry(0, 0, 418, 323)
         self.__display_background.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.__display_background.setObjectName('displayBackground')
-        self.__display_background.setStyleSheet(
-            f'''
-            QLabel#{self.__display_background.objectName()} {{ 
+        self.__display_background.setStyleSheet(f'''
+            QLabel#{self.__display_background.objectName()} {{
             background-image: url({settings['display_background_image']});
             }}
-            '''
-        )
+        ''')
 
         self.__display_label = ImageLabel(parent=display_group)
         self.__display_label.setGeometry(0, 0, 418, 323)

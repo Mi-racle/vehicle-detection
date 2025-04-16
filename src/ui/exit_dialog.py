@@ -14,29 +14,52 @@ class ExitDialog(QDialog):
         def __init__(self, settings: dict, parent: Optional[QWidget] = None):
             super().__init__(parent)
 
-            font_siyuan_cn_bold = QFont(
+            font_pingfang_sc_bold = QFont(
                 QFontDatabase.applicationFontFamilies(
-                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_bold']))[0])
-            # TODO
+                    QFontDatabase.addApplicationFont(settings['font_pingfang_sc_bold']))[0])
 
-    class CustomPushButton(QPushButton):
-        def __init__(self, text: str, parent: Optional[QWidget] = None):
-            super().__init__(text, parent)
+            self.setFixedSize(490, 56)
 
-        def enterEvent(self, event):
-            self.setCursor(Qt.CursorShape.PointingHandCursor)
-            super().enterEvent(event)
+            self.__title_tag_label = QLabel('温馨提示', self)
+            self.__title_tag_label.setGeometry(24, 16, 64, 24)
+            self.__title_tag_label.setFont(font_pingfang_sc_bold)
+            self.__title_tag_label.setStyleSheet(settings['title_tag_label_ss'])
 
-        def leaveEvent(self, event):
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            super().leaveEvent(event)
+            self.__close_button = QPushButton(self)
+            self.__close_button.setGeometry(449, 15, 26, 26)
+            self.__close_button.setIcon(QIcon(settings['close_button_icon']))
+            self.__close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.__close_button.setStyleSheet("""
+                    QPushButton { background: none; border: none; padding: 0px; margin: 0px; }
+                    QPushButton:hover, QPushButton:pressed { background: none; }
+                    QPushButton:focus { outline: none; }
+            """)
+            self.__close_button.clicked.connect(parent.close if parent else self.close)
+
+            self.__solid_line = QWidget(self)
+            self.__solid_line.setGeometry(0, 55, 490, 1)
+            self.__solid_line.setObjectName('solidLine')
+            self.__solid_line.setStyleSheet(
+                f'QWidget#{self.__solid_line.objectName()} {{ {settings['solid_line_ss']} }}')
+
+            self.__old_pos = None
+
+        def mousePressEvent(self, event):
+            if event.button() == Qt.MouseButton.LeftButton:
+                self.__old_pos = event.globalPosition().toPoint()
+
+        def mouseMoveEvent(self, event):
+            if self.__old_pos:
+                delta = event.globalPosition().toPoint() - self.__old_pos
+                self.window().move(self.window().pos() + delta)
+                self.__old_pos = event.globalPosition().toPoint()
+
+        def mouseReleaseEvent(self, event):
+            self.__old_pos = None
 
     def __init__(self, settings: dict, parent: Optional[QWidget] = None):
         super().__init__(parent)
 
-        font_pingfang_sc_bold = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_pingfang_sc_bold']))[0])
         font_pingfang_sc_boldface = QFont(
             QFontDatabase.applicationFontFamilies(
                 QFontDatabase.addApplicationFont(settings['font_pingfang_sc_boldface']))[0])
@@ -56,26 +79,8 @@ class ExitDialog(QDialog):
         self.__background.setObjectName('dialogBackground')
         self.__background.setStyleSheet(f'QWidget#{self.__background.objectName()} {{ {settings['background_ss']} }}')
 
-        title_bar_group = QWidget(self)
-        title_bar_group.setGeometry(0, 0, 490, 56)
-
-        # title_bar_group BEGIN
-        self.__title_tag_label = QLabel('温馨提示', title_bar_group)
-        self.__title_tag_label.setGeometry(24, 16, 64, 24)
-        self.__title_tag_label.setFont(font_pingfang_sc_bold)
-        self.__title_tag_label.setStyleSheet(settings['title_tag_label_ss'])
-
-        self.__close_button = QPushButton(title_bar_group)
-        self.__close_button.setGeometry(449, 15, 26, 26)
-        self.__close_button.setIcon(QIcon(settings['close_button_icon']))
-        self.__close_button.clicked.connect(parent.close if parent else self.close)
-
-        self.__solid_line = QWidget(title_bar_group)
-        self.__solid_line.setGeometry(0, 55, 490, 1)
-        self.__solid_line.setObjectName('solidLine')
-        self.__solid_line.setStyleSheet(
-            f'QWidget#{self.__solid_line.objectName()} {{ {settings['solid_line_ss']} }}')
-        # title_bar_group END
+        self.__title_bar = ExitDialog.CustomTitleBar(settings['title_bar'], self)
+        self.__title_bar.setGeometry(0, 0, 490, 56)
 
         middle_group = QWidget(self)
         middle_group.setGeometry(24, 72, 442, 186)
@@ -108,64 +113,61 @@ class ExitDialog(QDialog):
         self.__exit_radio_button = QRadioButton('退出程序', options_group)
         self.__exit_radio_button.setGeometry(0, 0, 102, 22)
         self.__exit_radio_button.setFont(font_pingfang_sc_boldface)
-        self.__exit_radio_button.setStyleSheet(
-            f"""
+        self.__exit_radio_button.setStyleSheet(f"""
             QRadioButton::indicator {{width: 14px; height: 14px;}}
             QRadioButton::indicator:unchecked {{image: url({settings['radio_button_unchecked_icon']});}}
             QRadioButton::indicator:checked {{image: url({settings['radio_button_checked_icon']});}}
             {settings['radio_button_ss']}
-            """
-        )
+        """)
 
         self.__tray_radio_button = QRadioButton('最小化到托盘', options_group)
         self.__tray_radio_button.setGeometry(142, 0, 119, 22)
         self.__tray_radio_button.setChecked(True)
         self.__tray_radio_button.setFont(font_pingfang_sc_boldface)
-        self.__tray_radio_button.setStyleSheet(
-            f"""
+        self.__tray_radio_button.setStyleSheet(f"""
             QRadioButton::indicator {{width: 14px; height: 14px;}}
             QRadioButton::indicator:unchecked {{image: url({settings['radio_button_unchecked_icon']});}}
             QRadioButton::indicator:checked {{image: url({settings['radio_button_checked_icon']});}}
             {settings['radio_button_ss']}
-            """
-        )
+        """)
 
-        button_group = QButtonGroup()
-        button_group.addButton(self.__exit_radio_button)
-        button_group.addButton(self.__tray_radio_button)
+        self.__button_group = QButtonGroup()
+        self.__button_group.addButton(self.__exit_radio_button, ExitDialog.EXIT)
+        self.__button_group.addButton(self.__tray_radio_button, ExitDialog.HIDE)
         # options_group END
         # middle_group END
 
         self.__checkbox = QCheckBox('不再提示', self)
         self.__checkbox.setGeometry(24, 274, 102, 22)
         self.__checkbox.setFont(font_pingfang_sc_boldface)
-        self.__checkbox.setStyleSheet(
-            f"""
+        self.__checkbox.setStyleSheet(f"""
             QCheckBox::indicator {{width: 14px; height: 14px;}}
             QCheckBox::indicator:unchecked {{image: url({settings['checkbox_unchecked_icon']});}}
             QCheckBox::indicator:checked {{image: url({settings['checkbox_checked_icon']});}}
             {settings['checkbox_ss']}
-            """
-        )
+        """)  # TODO add checked icon
 
         confirmation_group = QWidget(self)
         confirmation_group.setGeometry(24, 317, 442, 40)
 
         # confirmation_group BEGIN
-        self.__cancel_button = ExitDialog.CustomPushButton('取消', confirmation_group)
+        self.__cancel_button = QPushButton('取消', confirmation_group)
         self.__cancel_button.setGeometry(0, 0, 215, 40)
+        self.__cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.__cancel_button.setFont(font_pingfang_sc_regular)
         self.__cancel_button.setStyleSheet(settings['cancel_button_ss'])
         self.__cancel_button.clicked.connect(self.reject)
 
-        self.__ok_button = ExitDialog.CustomPushButton('确定', confirmation_group)
+        self.__ok_button = QPushButton('确定', confirmation_group)
         self.__ok_button.setGeometry(227, 0, 215, 40)
+        self.__ok_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.__ok_button.setFont(font_pingfang_sc_regular)
         self.__ok_button.setStyleSheet(settings['ok_button_ss'])
         self.__ok_button.clicked.connect(self.accept)
+        # confirmation_group END
 
     def get_choice(self):
-        return ExitDialog.EXIT if self.__exit_radio_button.isChecked() else ExitDialog.HIDE
+        return self.__button_group.checkedId()
 
     def remember_choice(self):
         return self.__checkbox.isChecked()

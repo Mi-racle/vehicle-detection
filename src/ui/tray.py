@@ -20,17 +20,9 @@ class Tray(QSystemTrayIcon):
         tray_menu.addAction('显示窗口', self.__show)
         tray_menu.addAction('退出程序', self.__quit)
         tray_menu.setStyleSheet("""
-            QMenu {
-                background-color: white;
-                border: 1px solid gray;
-            }
-            QMenu::item {
-                padding: 6px 30px;
-                text-align: center;
-            }
-            QMenu::item:selected {
-                background-color: #DDDDDD;
-            }
+            QMenu { background-color: white; border: 1px solid gray;}
+            QMenu::item { padding: 6px 30px; text-align: center;}
+            QMenu::item:selected { background-color: #DDDDDD;}
         """)
 
         self.setContextMenu(tray_menu)

@@ -228,14 +228,12 @@ class CorpusListWidget(QWidget):
         self.__scroll_area.setWidget(self.__scroll_container)
         self.__scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
         self.__scroll_area.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.__scroll_area.setStyleSheet(
-            f'''
+        self.__scroll_area.setStyleSheet(f'''
             QScrollArea {{ background: transparent;}}
             {settings['scroll_bar_ss']}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; background: none;}}
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none;}}
-            '''
-        )
+        ''')
 
         self.__settings = settings
         self.__corpus_entries: dict[str, dict] = {}  # {corpus_name: corpus}
