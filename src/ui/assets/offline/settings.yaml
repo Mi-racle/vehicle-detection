@@ -8,6 +8,8 @@ title_bar:
   title_bar_ss: 'background-color: #FF883C;'
   title_bar_icon: 'ui/assets/offline/AI-9.png'
   text_label_ss: 'font-weight: normal; font-size: 30px; color: #FFFFFF; line-height: 36px; text-align: left; font-style: normal;'
+  minimize_button_icon: 'ui/assets/offline/minimize.png'
+  maximize_button_icon: 'ui/assets/offline/maximize.png'
   close_button_icon: 'ui/assets/offline/close.png'
 
 task_detail:

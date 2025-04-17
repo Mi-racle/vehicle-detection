@@ -22,7 +22,7 @@ class TblCameraDAO:
         cursor = None
 
         try:
-            if self.__connection.is_connected():
+            if not self.__connection.is_connected():
                 self.__connection = mysql.connector.connect(**self.__config)
 
             cursor = self.__connection.cursor(dictionary=True)

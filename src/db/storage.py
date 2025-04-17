@@ -14,7 +14,6 @@ class ObsDAO:
             server=f'http://{self.__obs_config['address']}',
             port=self.__obs_config['port']
         )
-        # TODO add queue
 
     def upload_file(self, file_path: str, object_key: str | None = None):
         resp = None

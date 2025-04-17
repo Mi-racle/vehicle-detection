@@ -377,3 +377,17 @@ def put_text_ch(
     img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
     return img
+
+
+def get_video_seconds(url: str) -> int:
+    try:
+        cap = cv2.VideoCapture(url)
+        seconds = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) / cap.get(cv2.CAP_PROP_FPS))
+        cap.release()
+
+        return seconds
+
+    except Exception as e:
+        print(e)
+
+        return 0

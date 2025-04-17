@@ -1,28 +1,35 @@
+import inspect
 import sys
-from threading import Thread
 
 import yaml
-from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QApplication
-from PyQt6.sip import array
 
-from ui.corpus_detail import CorpusDetailWidget
-from ui.corpus_list import CorpusListWidget
-from ui.exit_dialog import ExitDialog
 from ui.main_window import MainWindow
+from ui.title_bar import TitleBarWidget
 from ui.task_detail import TaskDetailWidget
 from ui.task_list import TaskListWidget
-from ui.title_bar import TitleBarWidget
+from ui.corpus_list import CorpusListWidget
+from ui.corpus_detail import CorpusDetailWidget
 from ui.tray import Tray
+from ui.exit_dialog import ExitDialog
+
+
+def filter_kwargs(cls, params: dict) -> dict:
+    sig = inspect.signature(cls.__init__)
+    valid_keys = sig.parameters.keys()
+    return {k: v for k, v in params.items() if k in valid_keys}
+
 
 if __name__ == '__main__':
     sys_config = yaml.safe_load(open(f'configs/sys_config.yaml', 'r'))
     gui_settings: dict = yaml.safe_load(open(f'ui/assets/{'on' if sys_config['online'] else 'off'}line/settings.yaml', 'r'))
 
+    kwargs = filter_kwargs(MainWindow, sys_config)
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    window = MainWindow(sys_config['output_dir'], sys_config['online'])
+    window = MainWindow(**kwargs)
     # window = TitleBarWidget(gui_settings['title_bar'])
     # window = TaskDetailWidget(gui_settings['task_detail'])
     # window = TaskListWidget(gui_settings['task_list'])
@@ -32,6 +39,5 @@ if __name__ == '__main__':
     # window = ExitDialog(gui_settings['exit_dialog'])
 
     window.show()
-    # Thread(target=window.scroll_test, args=(5,)).start()
-    # window.scroll_test(5)
+
     app.exec()

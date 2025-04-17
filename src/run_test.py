@@ -1,14 +1,12 @@
-import argparse
+import inspect
 import logging
 import os
 import sys
 from datetime import datetime
 
-import cv2
 import yaml
 from PyQt6.QtWidgets import QApplication
 
-from db import TASK_OFFLINE_DAO, TASK_ONLINE_DAO
 from ui.main_window import MainWindow
 
 
@@ -34,14 +32,23 @@ def init_log(dir_name: str):
     logger.addHandler(console_handler)
 
 
-if __name__ == '__main__':
-    sys_config = yaml.safe_load(open(f'configs/sys_config.yaml', 'r'))
+def filter_kwargs(cls, params: dict) -> dict:
+    sig = inspect.signature(cls.__init__)
+    valid_keys = sig.parameters.keys()
+    return {k: v for k, v in params.items() if k in valid_keys}
 
-    init_log('logs')
+
+if __name__ == '__main__':
+    sys_config: dict = yaml.safe_load(open('configs/sys_config.yaml', 'r'))
+
+    init_log(sys_config['log_dir'])
+
+    kwargs = filter_kwargs(MainWindow, sys_config)
 
     app = QApplication(sys.argv)
-    window = MainWindow(sys_config['output_dir'], sys_config['online'])
+    app.setQuitOnLastWindowClosed(False)
 
+    window = MainWindow(**kwargs)
     window.show()
     window.func()
 

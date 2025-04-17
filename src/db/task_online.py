@@ -6,6 +6,8 @@ import mysql.connector
 import yaml
 from mysql.connector import Error
 
+from db import TblGroupDAO, TblCameraDAO
+
 
 class TblTaskOnlineDAO:
     def __init__(self, config_path: str):
@@ -13,6 +15,8 @@ class TblTaskOnlineDAO:
         self.__connection = mysql.connector.connect(**self.__config)
         self.__TABLE_NAME = 'tbl_task_run'
         self.__TASK_INFO_DAO = TblTaskInfoDAO(config_path)
+        self.__GROUP_DAO = TblGroupDAO(config_path)
+        self.__CAMERA_DAO = TblCameraDAO(config_path)
 
     def __del__(self):
         if self.__connection and self.__connection.is_connected():
@@ -22,7 +26,7 @@ class TblTaskOnlineDAO:
         cursor = None
 
         try:
-            if self.__connection.is_connected():
+            if not self.__connection.is_connected():
                 self.__connection = mysql.connector.connect(**self.__config)
 
             cursor = self.__connection.cursor(dictionary=True)
@@ -54,7 +58,7 @@ class TblTaskOnlineDAO:
         cursor = None
 
         try:
-            if self.__connection.is_connected():
+            if not self.__connection.is_connected():
                 self.__connection = mysql.connector.connect(**self.__config)
 
             cursor = self.__connection.cursor(dictionary=True)
@@ -74,13 +78,33 @@ class TblTaskOnlineDAO:
 
                 if start_datetime <= datetime.now() < end_datetime:
                     task_info = self.__TASK_INFO_DAO.get_task_info_by_id(fetch['id'])
-
                     fetch['task_name'] = task_info['task_name'] if task_info else ''
                     fetch['group_id'] = json.loads(fetch['group_id'])
                     fetch['create_time'] = start_datetime
                     fetch['analysis_start_time'] = fetch.pop('start_time')
                     fetch['analysis_end_time'] = fetch.pop('end_time')
                     fetch['status'] = fetch.pop('excute_status')  # 'excute' is a typo in sql
+
+                    fetch['camera_id'] = ''
+                    fetch['camera_type'] = 1
+                    fetch['url'] = fetch.pop('file_url') if 'file_url' in fetch else ''
+                    fetch['matrix'] = ''
+                    fetch['description'] = ''
+
+                    if fetch['group_id']:
+                        group = self.__GROUP_DAO.get_group_by_group_id(fetch['group_id'][0])
+
+                        if group:
+                            camera = self.__CAMERA_DAO.get_camera_by_camera_id(group['camera_id'])
+
+                            if camera:
+                                fetch['camera_id'] = camera['camera_id']
+                                fetch['camera_type'] = camera['type']
+                                fetch['url'] = camera['url']
+                                fetch['matrix'] = camera['matrix']  # TODO
+                                fetch['description'] = camera['description']
+
+                    tasks.append(fetch)
 
             return tasks
 
@@ -96,7 +120,7 @@ class TblTaskOnlineDAO:
         cursor = None
 
         try:
-            if self.__connection.is_connected():
+            if not self.__connection.is_connected():
                 self.__connection = mysql.connector.connect(**self.__config)
 
             cursor = self.__connection.cursor(dictionary=True)
@@ -130,7 +154,7 @@ class TblTaskInfoDAO:
         cursor = None
 
         try:
-            if self.__connection.is_connected():
+            if not self.__connection.is_connected():
                 self.__connection = mysql.connector.connect(**self.__config)
 
             cursor = self.__connection.cursor(dictionary=True)

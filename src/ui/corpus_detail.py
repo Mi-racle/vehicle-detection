@@ -89,6 +89,7 @@ class CorpusDetailWidget(QWidget):
 
         self.__model_label = QLabel('-', model_subgroup)
         self.__model_label.setGeometry(0, 25, 306, 18)
+        self.__model_label.setToolTip(self.__model_label.text())
         self.__model_label.setFont(font_siyuan_cn_regular)
         self.__model_label.setStyleSheet(settings['model_label_ss'])
         # model_subgroup END
@@ -113,6 +114,7 @@ class CorpusDetailWidget(QWidget):
 
         self.__camera_id_label = QLabel('-', camera_id_subgroup)
         self.__camera_id_label.setGeometry(0, 25, 306, 18)
+        self.__camera_id_label.setToolTip(self.__camera_id_label.text())
         self.__camera_id_label.setFont(font_siyuan_cn_regular)
         self.__camera_id_label.setStyleSheet(settings['camera_id_label_ss'])
         # camera_id_subgroup END
@@ -137,6 +139,7 @@ class CorpusDetailWidget(QWidget):
 
         self.__video_type_label = QLabel('-', video_type_subgroup)
         self.__video_type_label.setGeometry(0, 25, 306, 18)
+        self.__video_type_label.setToolTip(self.__video_type_label.text())
         self.__video_type_label.setFont(font_siyuan_cn_regular)
         self.__video_type_label.setStyleSheet(settings['video_type_label_ss'])
         # video_type_subgroup END
@@ -147,7 +150,7 @@ class CorpusDetailWidget(QWidget):
 
         # video_source_group BEGIN
         self.__video_source_icon_label = QLabel(video_source_group)
-        self.__video_source_icon_label.setGeometry(5, 12, 68, 51)
+        self.__video_source_icon_label.setGeometry(16, 14, 68, 51)
         self.__video_source_icon_label.setPixmap(QPixmap(settings['video_source_icon']))
 
         video_source_subgroup = QWidget(video_source_group)
@@ -161,6 +164,7 @@ class CorpusDetailWidget(QWidget):
 
         self.__video_source_label = QLabel('-', video_source_subgroup)
         self.__video_source_label.setGeometry(0, 26, 306, 18)
+        self.__video_source_label.setToolTip(self.__video_source_label.text())
         self.__video_source_label.setFont(font_siyuan_cn_regular)
         self.__video_source_label.setStyleSheet(settings['video_source_label_ss'])
         # video_source_subgroup END
@@ -292,11 +296,15 @@ class CorpusDetailWidget(QWidget):
         if corpus_entry:
             self.__corpus_name_label.setText(corpus_entry['dest'])
             self.__model_label.setText(f'{corpus_entry['model_name']}v{corpus_entry['model_version']}')
+            self.__model_label.setToolTip(self.__model_label.text())
             self.__camera_id_label.setText(corpus_entry['camera_id'])
+            self.__camera_id_label.setToolTip(self.__camera_id_label.text())
             self.__video_type_label.setText('实时视频流' if int(corpus_entry['video_type']) == 1 else '视频文件')
+            self.__video_type_label.setToolTip(self.__video_type_label.text())
             self.__video_source_label.setText(corpus_entry['source'])
-            self.__start_time_label.setText(str(corpus_entry['start_time']))  # TODO may need concat date and time
-            self.__end_time_label.setText(str(corpus_entry['end_time']))  # TODO may need concat date and time
+            self.__video_source_label.setToolTip(self.__video_source_label.text())
+            self.__start_time_label.setText(str(corpus_entry['start_time']))
+            self.__end_time_label.setText(str(corpus_entry['end_time']))
             self.__plate_label.setText(corpus_entry['plate_no'] if corpus_entry['plate_no'] else '无')
             self.__position_label.setText(corpus_entry['locations'])
             self.__loading_icon_label.setVisible(False)
@@ -311,9 +319,13 @@ class CorpusDetailWidget(QWidget):
         else:  # reset
             self.__corpus_name_label.setText('未选定语料文件')
             self.__model_label.setText('-')
+            self.__model_label.setToolTip(self.__model_label.text())
             self.__camera_id_label.setText('-')
+            self.__camera_id_label.setToolTip(self.__camera_id_label.text())
             self.__video_type_label.setText('-')
+            self.__video_type_label.setToolTip(self.__video_type_label.text())
             self.__video_source_label.setText('-')
+            self.__video_source_label.setToolTip(self.__video_source_label.text())
             self.__start_time_label.setText('-')
             self.__end_time_label.setText('-')
             self.__plate_label.setText('-')

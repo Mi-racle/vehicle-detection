@@ -145,7 +145,7 @@ class ExitDialog(QDialog):
             QCheckBox::indicator:unchecked {{image: url({settings['checkbox_unchecked_icon']});}}
             QCheckBox::indicator:checked {{image: url({settings['checkbox_checked_icon']});}}
             {settings['checkbox_ss']}
-        """)  # TODO add checked icon
+        """)
 
         confirmation_group = QWidget(self)
         confirmation_group.setGeometry(24, 317, 442, 40)
@@ -166,8 +166,20 @@ class ExitDialog(QDialog):
         self.__ok_button.clicked.connect(self.accept)
         # confirmation_group END
 
+    def closeEvent(self, event):
+        self.__reset()
+        super().closeEvent(event)
+        
+    def reject(self):
+        self.__reset()
+        super().reject()
+
     def get_choice(self):
         return self.__button_group.checkedId()
 
     def remember_choice(self):
         return self.__checkbox.isChecked()
+
+    def __reset(self):
+        self.__tray_radio_button.setChecked(True)
+        self.__checkbox.setChecked(False)

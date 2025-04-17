@@ -6,10 +6,11 @@ from typing import Any, Callable
 
 import cv2
 import numpy as np
+import torch.cuda
 from PyQt6.QtCore import pyqtSignal
 from ultralytics import YOLO
 
-from db import CAMERA_DAO, GROUP_DAO, TASK_ONLINE_DAO, TASK_OFFLINE_DAO, MODEL_DAO, RESULT_DAO, OBS_DAO
+from db import GROUP_DAO, TASK_ONLINE_DAO, TASK_OFFLINE_DAO, MODEL_DAO
 from detectors import ParkingDetector, WrongwayDetector, LanechangeDetector, SpeedingDetector, VelocityDetector, \
     PimDetector, SectionDetector, VolumeDetector, DensityDetector, QueueDetector, JamDetector, PlateDetector, \
     TriangleDetector, SizeDetector, ObjectDetector
@@ -19,42 +20,32 @@ from utils import get_file_by_substr, in_analysis
 
 def detect(
         task_entry: dict,
-        output_dir: str,
+        output_dir='',
+        online=False,
+        use_gpu=False,
         is_closed: Callable[[], bool] | None = None,
         append_corpus_signal: pyqtSignal | None = None,
         set_umat: Callable[[cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray], None] | None = None,
 ):
-    is_online = 'file_url' not in task_entry
-
-    if is_online:
-        video_url = CAMERA_DAO.get_camera_by_camera_id(
-            GROUP_DAO.get_group_by_group_id(
-                task_entry['group_id'][0]
-            )['camera_id']
-        )['url']
+    if online:
         update_task_status = TASK_ONLINE_DAO.update_online_task_status_by_id
-
     else:
-        video_url = task_entry['file_url']
         update_task_status = TASK_OFFLINE_DAO.update_offline_task_status_by_id
 
-    cap_in = cv2.VideoCapture(video_url)
+    cap_in = cv2.VideoCapture(task_entry['url'])
     fps = cap_in.get(cv2.CAP_PROP_FPS)
 
     det_models: dict[str, dict[str, Any]] = {}
     detectors = {}  # {'group_id': Detector}
     dets_args = {}  # {'group_id': det_args}
-    camera_entries = {}  # {'group_id': camera_entry}
     model_entries = {}  # {'group_id': model_entry}
 
     for group_id in task_entry['group_id']:
         group_entry = GROUP_DAO.get_group_by_group_id(group_id)
 
-        camera_entry = CAMERA_DAO.get_camera_by_camera_id(group_entry['camera_id'])
         model_entry = MODEL_DAO.get_model_by_model_id(group_entry['model_id'])
         det_args = group_entry['args']
 
-        camera_entries[group_id] = camera_entry
         model_entries[group_id] = model_entry
         dets_args[group_id] = det_args
 
@@ -68,7 +59,8 @@ def detect(
                 if det_file and rec_file:
                     mdl = OCRer(
                         det_model_path=os.path.join(model_entry['file_path'], det_file),
-                        rec_model_path=os.path.join(model_entry['file_path'], rec_file)
+                        rec_model_path=os.path.join(model_entry['file_path'], rec_file),
+                        use_gpu=use_gpu
                     )
             if mdl:
                 det_models[model_entry['file_path']] = {
@@ -129,7 +121,7 @@ def detect(
     end_as_designed = False
     timer = timedelta(seconds=1 / fps)
 
-    if is_online:
+    if online:
         now = datetime.now()
         timer = timedelta(hours=now.hour, minutes=now.minute, seconds=now.second)
 
@@ -167,8 +159,7 @@ def detect(
                     agnostic_nms=True,
                     persist=True,
                     verbose=False,
-                    device=0,
-                    # device='cpu',
+                    device=0 if use_gpu & torch.cuda.is_available() else 'cpu',
                     classes=values['classes']
                 )[0].cpu().numpy()
             elif isinstance(det_model, OCRer):
@@ -186,7 +177,6 @@ def detect(
         subscript_line = 1
         for group in detectors:  # 'group' is group id
             detector = detectors[group]
-            camera = camera_entries[group]
             model = model_entries[group]
             dargs = dets_args[group]
 
@@ -212,24 +202,25 @@ def detect(
                     start_time = timer - td_video_length
                     end_time = timer - td_diff
 
+                if online & ('execute_date' in task_entry):
+                    start_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + start_time
+                    end_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + end_time
+
                 entry = {
                     'model_name': model['model_name'],
                     'model_version': model['model_version'],
-                    'camera_type': camera['type'],
-                    'camera_id': camera['camera_id'],
-                    'video_type': 1 if is_online else 2,
-                    'source': video_url,
+                    'camera_type': task_entry['camera_type'],
+                    'camera_id': task_entry['camera_id'],
+                    'video_type': 1 if online else 2,
+                    'source': task_entry['url'],
                     'dest': corpus_info['dest'],
                     'start_time': start_time,
                     'end_time': end_time,
                     'plate_no': corpus_info['plate_no'],
-                    'locations': camera['matrix']  # TODO
+                    'locations': task_entry['matrix']  # TODO
                 }
 
-                append_corpus_signal.emit(entry)  # Update ui
-                RESULT_DAO.insert_result(entry)  # Update sql
-                # TODO for test. Need uncomment.
-                # OBS_DAO.upload_file(f'{output_dir}/{entry['dest']}')  # Update obs
+                append_corpus_signal.emit(entry, task_entry['description'])  # Update ui, sql and obs
 
         set_umat and set_umat(plotted_frame)
 
@@ -244,5 +235,4 @@ def detect(
 
     cap_in.release()
 
-    # TODO for test. Need uncomment.
     update_task_status(task_entry['id'], 1 if end_as_designed else -1)

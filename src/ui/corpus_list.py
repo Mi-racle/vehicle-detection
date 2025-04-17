@@ -71,7 +71,7 @@ class CorpusListWidget(QWidget):
             self.__position_tag_label.setFont(self.__font_siyuan_cn_regular)
             self.__position_tag_label.setStyleSheet(settings['position_tag_label_ss'])
 
-            self.__position_label = QLabel(str(position), position_group)  # TODO
+            self.__position_label = QLabel(position, position_group)
             self.__position_label.setGeometry(48, 0, 42 + position_label_width_bias, 16)
             self.__position_label.setFont(self.__font_siyuan_cn_regular)
             self.__position_label.setStyleSheet(settings['position_label_ss'])
@@ -241,12 +241,12 @@ class CorpusListWidget(QWidget):
 
         # self.__scroll_test(5)
 
-    def add_corpus(self, corpus_entry: dict):
+    def add_corpus(self, corpus_entry: dict, camera_position: str):
         item = CorpusListWidget.ScrollItemWidget(
             self.__settings['scroll_item'],
             self.__comm,
             str(corpus_entry['dest']),
-            str(corpus_entry['locations']),
+            str(camera_position),
             str(corpus_entry['model_name']),
             str(corpus_entry['start_time']),
             str(corpus_entry['end_time'])

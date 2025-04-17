@@ -1,2 +1,8 @@
+#width: 1536
+#height: 864
+width: 1920
+height: 1202
 online: false
+log_dir: logs
 output_dir: runs
+use_gpu: true

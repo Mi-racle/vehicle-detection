@@ -348,7 +348,7 @@ class SizeDetector(Detector):
             delta_second: float,
             fps: float
     ):
-        self.__history_size = {}
+        self.__history_size = {}  # TODO recycle
         self.__cls_indices = cls_indices
         self.__det_line = det_line
         self.__thresholds = thresholds

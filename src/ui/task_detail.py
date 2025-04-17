@@ -1,8 +1,11 @@
+from datetime import datetime, timedelta
 from typing import Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QFont, QFontDatabase
 from PyQt6.QtWidgets import QWidget, QLabel
+
+from utils import get_video_seconds
 
 
 class TaskDetailWidget(QWidget):
@@ -80,6 +83,7 @@ class TaskDetailWidget(QWidget):
 
         self.__camera_position_label = QLabel('-', camera_position_subgroup)
         self.__camera_position_label.setGeometry(0, 26, 124, 18)
+        self.__camera_position_label.setToolTip(self.__camera_position_label.text())
         self.__camera_position_label.setFont(font_siyuan_cn_regular)
         self.__camera_position_label.setStyleSheet(settings['camera_position_label_ss'])
         # camera_position_subgroup END
@@ -104,6 +108,7 @@ class TaskDetailWidget(QWidget):
 
         self.__video_source_label = QLabel('-', video_source_subgroup)
         self.__video_source_label.setGeometry(0, 26, 124, 18)
+        self.__video_source_label.setToolTip(self.__video_source_label.text())
         self.__video_source_label.setFont(font_siyuan_cn_regular)
         self.__video_source_label.setStyleSheet(settings['video_source_label_ss'])
         # video_source_subgroup END
@@ -198,17 +203,26 @@ class TaskDetailWidget(QWidget):
     def set_task(self, task_entry: dict | None = None):
         if task_entry:
             self.__task_name_label.setText(task_entry['task_name'])
-            self.__camera_position_label.setText('TBD')  # description TODO
-            self.__video_source_label.setText('TBD')  # url TODO
+            self.__camera_position_label.setText(task_entry['description'])
+            self.__camera_position_label.setToolTip(self.__camera_position_label.text())
+            self.__video_source_label.setText(task_entry['url'])
+            self.__video_source_label.setToolTip(self.__video_source_label.text())
             self.__creation_time_label.setText(str(task_entry['create_time']))
-            self.__start_time_label.setText(str(task_entry['analysis_start_time']))
-            self.__end_time_label.setText(str(task_entry['analysis_end_time']))
+            start_time = task_entry['analysis_start_time'] or timedelta()
+            end_time = task_entry['analysis_end_time'] or timedelta(seconds=get_video_seconds(task_entry['url']))
+            if 'execute_date' in task_entry:
+                start_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + start_time
+                end_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + end_time
+            self.__start_time_label.setText(str(start_time))
+            self.__end_time_label.setText(str(end_time))
             self.__detection_name_label.setText(str(task_entry['group_id']))  # TODO
 
         else:  # reset
             self.__task_name_label.setText('等待任务中')
             self.__camera_position_label.setText('-')
+            self.__camera_position_label.setToolTip(self.__camera_position_label.text())
             self.__video_source_label.setText('-')
+            self.__video_source_label.setToolTip(self.__video_source_label.text())
             self.__creation_time_label.setText('-')
             self.__start_time_label.setText('-')
             self.__end_time_label.setText('-')

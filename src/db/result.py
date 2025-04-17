@@ -19,7 +19,7 @@ class TblResultDAO:
         cursor = None
 
         try:
-            if self.__connection.is_connected():
+            if not self.__connection.is_connected():
                 self.__connection = mysql.connector.connect(**self.__config)
 
             cursor = self.__connection.cursor(dictionary=True)
@@ -35,29 +35,6 @@ class TblResultDAO:
 
         except Error as e:
             self.__connection.rollback()
-            logging.error(f'Error: {e}')
-
-        finally:
-            if cursor:
-                cursor.close()
-
-    def get_result_header(self):
-        cursor = None
-
-        try:
-            if self.__connection.is_connected():
-                self.__connection = mysql.connector.connect(**self.__config)
-
-            cursor = self.__connection.cursor()
-
-            describe_query = f'''DESCRIBE {self.__TABLE_NAME}'''
-
-            cursor.execute(describe_query)
-            logging.info(f'Successfully described {self.__TABLE_NAME}')
-
-            return [column[0] for column in cursor.fetchall()]
-
-        except Error as e:
             logging.error(f'Error: {e}')
 
         finally:

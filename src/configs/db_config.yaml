@@ -4,6 +4,7 @@ port: 3306
 database: db_banma_traffic_analysis
 user: root
 password: "123456"
+autocommit: true
 
 # TiDB
 #host: 192.168.1.185
