@@ -1,9 +1,9 @@
 from typing import Optional
 
 import cv2
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap, QImage
-from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap, QImage, QWheelEvent
+from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QScrollArea
 
 
 class ImageLabel(QLabel):
@@ -74,10 +74,26 @@ class ScrollContainer(QWidget):
             except IndexError as ie:
                 print(ie)
 
+    def removeAll(self):
+        while self.__items:
+            self.removeItem(0)
+
     def getItem(self, object_name: str):
         for item in self.__items:
             if item.objectName() == object_name:
                 return item
 
     def __updateSize(self):
-        self.setFixedHeight(sum([item.height() for item in self.__items]))
+        width = self.__items and self.__items[0].width() or 0
+        height = sum([item.height() for item in self.__items])
+        self.setFixedSize(width, height)
+
+
+class ScrollAreaWithShift(QScrollArea):
+    def wheelEvent(self, event: QWheelEvent):
+        if event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
+            delta = event.angleDelta().y()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta)
+            event.accept()
+        else:
+            super().wheelEvent(event)

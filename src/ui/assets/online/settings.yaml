@@ -32,6 +32,7 @@ task_detail:
   point2_icon: 'ui/assets/online/point.png'
   detection_tag_label_ss: 'font-weight: 500; font-size: 18px; color: #333333; line-height: 27px; text-align: left; font-style: normal;'
   detection_background_ss: 'border: 5px solid rgba(77,123,184,0.16);'
+  scroll_bar_ss: 'QScrollBar:vertical { background: transparent; width: 10px; margin: 0px 0px 0px 0px;} QScrollBar::handle:vertical { background: #BDC9DE; border-radius: 5px; border: 1px solid #93ABD5;}'
   detection_name_label_ss: 'font-weight: 400; font-size: 18px; color: #333333; line-height: 24px; text-align: left; font-style: normal;'
   start_time_tag_label_ss: 'font-weight: 400; font-size: 16px; color: rgba(51,51,51,0.7); line-height: 24px; text-align: left; font-style: normal;'
   start_time_label_ss: 'font-weight: 400; font-size: 18px; color: #333333; line-height: 27px; text-align: left; font-style: normal;'
@@ -69,7 +70,7 @@ corpus_list:
   title_icon: 'ui/assets/online/ico-tit-yiscyuliao.png'
   title_tag_label_ss: 'font-weight: bold; font-size: 20px; color: #333333; line-height: 30px; text-align: left; font-style: normal;'
   title_line: 'ui/assets/online/titline2.png'
-  scroll_bar_ss: 'QScrollBar:vertical { background: transparent; width: 10px; margin: 0px 0px 0px 0px;} QScrollBar::handle:vertical { background: #BDC9DE; border-radius: 5px; border: 1px solid #93ABD5;}'
+  scroll_bar_ss: 'QScrollBar:vertical { background: transparent; width: 10px; margin: 0px 0px 0px 0px;} QScrollBar::handle:vertical { background: #BDC9DE; border-radius: 5px; border: 1px solid #93ABD5;} QScrollBar:horizontal { background: transparent; height: 10px; margin: 0px 0px 0px 0px;} QScrollBar::handle:horizontal { background: #BDC9DE; border-radius: 5px; border: 1px solid #93ABD5;}'
   scroll_item:
     font_siyuan_cn_heavy: 'ui/assets/online/SourceHanSansCN-Heavy.ttf'
     font_siyuan_cn_medium: 'ui/assets/online/SourceHanSansCN-Medium.ttf'

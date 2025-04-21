@@ -1,10 +1,10 @@
 from typing import Optional, Callable
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QFontDatabase, QPixmap
-from PyQt6.QtWidgets import QWidget, QLabel, QScrollArea
+from PyQt6.QtGui import QFont, QFontDatabase, QPixmap, QResizeEvent
+from PyQt6.QtWidgets import QWidget, QLabel
 
-from ui.ui_utils import ScrollContainer
+from ui.ui_utils import ScrollContainer, ScrollAreaWithShift
 
 
 class CorpusListWidget(QWidget):
@@ -196,11 +196,10 @@ class CorpusListWidget(QWidget):
             QFontDatabase.applicationFontFamilies(
                 QFontDatabase.addApplicationFont(settings['font_siyuan_cn_bold']))[0])
 
-        self.setFixedSize(960, 433)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
-        self.setObjectName('corpusListWidget')
-        self.setStyleSheet(
-            f'{type(self).__name__}#{self.objectName()} {{ background-image: url({settings['background_image']});}}')
+        self.__background = QLabel(self)
+        self.__background.setGeometry(0, 0, 960, 349)
+        self.__background.setPixmap(QPixmap(settings['background_image']))
+        self.__background.setScaledContents(True)
 
         title_group = QWidget(self)
         title_group.setGeometry(16, 16, 928, 44)
@@ -218,28 +217,46 @@ class CorpusListWidget(QWidget):
         self.__title_line_label = QLabel(title_group)
         self.__title_line_label.setGeometry(8, 41, 912, 3)
         self.__title_line_label.setPixmap(QPixmap(settings['title_line']))
+        self.__title_line_label.setScaledContents(True)
         # title_group END
 
         self.__scroll_container = ScrollContainer()
-        self.__scroll_container.setFixedSize(896, 0)
+        self.__scroll_container.setFixedSize(0, 0)
 
-        self.__scroll_area = QScrollArea(self)
-        self.__scroll_area.setGeometry(32, 74, 896 + 24, 84 * 4)  # 24 = 14+8+1*2 = gap + bar_width + bar_border * 2
+        self.__scroll_area = ScrollAreaWithShift(self)
+        self.__scroll_area.setGeometry(32, 74, 896 + 24, 84 * 3)  # 24 = 14+8+1*2 = gap + bar_width + bar_border * 2
         self.__scroll_area.setWidget(self.__scroll_container)
-        self.__scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.__scroll_area.setFrameShape(ScrollAreaWithShift.Shape.NoFrame)
         self.__scroll_area.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.__scroll_area.setStyleSheet(f'''
-            QScrollArea {{ background: transparent;}}
+            {type(self.__scroll_area).__name__} {{ background: transparent;}}
             {settings['scroll_bar_ss']}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; background: none;}}
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none;}}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ height: 0px; background: none;}}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: none;}}
         ''')
 
         self.__settings = settings
-        self.__corpus_entries: dict[str, dict] = {}  # {corpus_name: corpus}
+        self.__corpus_entries: dict[str, dict] = {}  # { corpus_name: corpus }
         self.__selected_item: CorpusListWidget.ScrollItemWidget | None = None
 
         # self.__scroll_test(5)
+
+    def resizeEvent(self, event: QResizeEvent):
+        old_size = event.oldSize()
+        if old_size.width() == -1 or old_size.height() == -1:
+            super().resizeEvent(event)
+            return
+
+        new_size = event.size()
+        width_diff = old_size.width() - new_size.width()
+
+        self.__background.resize(new_size)
+        self.__title_line_label.setFixedWidth(self.__title_line_label.width() - width_diff)
+        self.__scroll_area.setFixedWidth(self.__scroll_area.width() - width_diff)
+
+        super().resizeEvent(event)
 
     def add_corpus(self, corpus_entry: dict, camera_position: str):
         item = CorpusListWidget.ScrollItemWidget(
@@ -299,5 +316,6 @@ class CorpusListWidget(QWidget):
                     'end_time': '2025-12-31 23:23:59',
                     'plate_no': None,
                     'locations': '杭州市闻涛路口'
-                }
+                },
+                '杭州市闻涛路口'
             )

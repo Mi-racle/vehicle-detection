@@ -27,7 +27,7 @@ if __name__ == '__main__':
     kwargs = filter_kwargs(MainWindow, sys_config)
 
     app = QApplication(sys.argv)
-    app.setQuitOnLastWindowClosed(False)
+    # app.setQuitOnLastWindowClosed(False)
 
     window = MainWindow(**kwargs)
     # window = TitleBarWidget(gui_settings['title_bar'])

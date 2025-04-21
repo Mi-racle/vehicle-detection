@@ -1,8 +1,10 @@
 #width: 1536
-#height: 864
+#height: 816
 width: 1920
-height: 1202
+height: 1102
 online: false
 log_dir: logs
 output_dir: runs
 use_gpu: true
+output_to_sql: false
+output_to_obs: false

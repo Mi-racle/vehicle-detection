@@ -1,14 +1,19 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap, QFont, QFontDatabase
-from PyQt6.QtWidgets import QWidget, QLabel
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QPixmap, QFont, QFontDatabase, QResizeEvent
+from PyQt6.QtWidgets import QWidget, QLabel, QScrollArea, QVBoxLayout
 
+from db import GROUP_DAO, MODEL_DAO
+from ui.ui_utils import ScrollContainer
 from utils import get_video_seconds
 
 
 class TaskDetailWidget(QWidget):
+    add_detection_signal = pyqtSignal(str)
+    reset_detection_signal = pyqtSignal()
+
     def __init__(self, settings: dict, parent: Optional[QWidget] = None):
         super().__init__(parent)
 
@@ -22,14 +27,13 @@ class TaskDetailWidget(QWidget):
             QFontDatabase.applicationFontFamilies(
                 QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
 
-        self.setFixedSize(450, 655)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
-        self.setObjectName('taskDetailWidget')
-        self.setStyleSheet(
-            f'{type(self).__name__}#{self.objectName()} {{ background-image: url({settings['background_image']}); }}')
+        self.__background = QLabel(self)
+        self.__background.setGeometry(0, 0, 450, 655)
+        self.__background.setPixmap(QPixmap(settings['background_image']))
+        self.__background.setScaledContents(True)
 
-        title_group = QWidget(self)
-        title_group.setGeometry(16, 16, 418, 44)
+        title_group = QWidget()
+        title_group.setFixedSize(418, 26)
 
         # title_group BEGIN
         self.__curr_task_icon_label = QLabel(title_group)
@@ -40,32 +44,46 @@ class TaskDetailWidget(QWidget):
         self.__curr_task_tag_label.setGeometry(38, 4, 100, 22)
         self.__curr_task_tag_label.setFont(font_siyuan_cn_bold)
         self.__curr_task_tag_label.setStyleSheet(settings['curr_task_tag_label_ss'])
-
-        self.__curr_task_line_label = QLabel(title_group)
-        self.__curr_task_line_label.setGeometry(8, 41, 402, 3)
-        self.__curr_task_line_label.setPixmap(QPixmap(settings['curr_task_line']))
         # title_group END
 
-        self.__ai_icon_label = QLabel(self)
-        self.__ai_icon_label.setGeometry(32, 76, 386, 168)
-        self.__ai_icon_label.setPixmap(QPixmap(settings['ai_icon']))
+        line_group = QWidget()
+        line_group.setFixedSize(418, 3)
 
-        task_name_group = QWidget(self)
-        task_name_group.setGeometry(32, 263, 398, 18)
+        # line_group BEGIN
+        self.__curr_task_line_label = QLabel(line_group)
+        self.__curr_task_line_label.setGeometry(8, 0, 402, 3)
+        self.__curr_task_line_label.setPixmap(QPixmap(settings['curr_task_line']))
+        # line_group END
+
+        ai_icon_group = QWidget()
+        ai_icon_group.setFixedSize(418, 168)
+
+        # ai_icon_group BEGIN
+        self.__ai_icon_label = QLabel(ai_icon_group)
+        self.__ai_icon_label.setGeometry(16, 0, 386, 168)
+        self.__ai_icon_label.setPixmap(QPixmap(settings['ai_icon']))
+        # ai_icon_group END
+
+        task_name_group = QWidget()
+        task_name_group.setFixedSize(418, 18)
 
         # task_name_group BEGIN
         self.__point_icon_label = QLabel(task_name_group)
-        self.__point_icon_label.setGeometry(0, 6, 6, 6)
+        self.__point_icon_label.setGeometry(16, 6, 6, 6)
         self.__point_icon_label.setPixmap(QPixmap(settings['point_icon']))
 
         self.__task_name_label = QLabel('等待任务中', task_name_group)
-        self.__task_name_label.setGeometry(14, 0, 372, 18)
+        self.__task_name_label.setGeometry(30, 0, 372, 18)
         self.__task_name_label.setFont(font_siyuan_cn_medium)
         self.__task_name_label.setStyleSheet(settings['task_name_label_ss'])
         # task_name_group END
 
-        camera_position_group = QWidget(self)
-        camera_position_group.setGeometry(32, 305, 188, 48)
+        pos_src_group = QWidget()
+        pos_src_group.setFixedSize(418, 48)
+
+        # pos_src_group BEGIN
+        camera_position_group = QWidget(pos_src_group)
+        camera_position_group.setGeometry(16, 0, 188, 48)
 
         # camera_position_group BEGIN
         self.__camera_position_icon_label = QLabel(camera_position_group)
@@ -89,8 +107,8 @@ class TaskDetailWidget(QWidget):
         # camera_position_subgroup END
         # camera_position_group END
 
-        video_source_group = QWidget(self)
-        video_source_group.setGeometry(230, 305, 188, 48)
+        video_source_group = QWidget(pos_src_group)
+        video_source_group.setGeometry(214, 0, 188, 48)
 
         # video_source_group BEGIN
         self.__video_source_icon_label = QLabel(video_source_group)
@@ -113,43 +131,56 @@ class TaskDetailWidget(QWidget):
         self.__video_source_label.setStyleSheet(settings['video_source_label_ss'])
         # video_source_subgroup END
         # video_source_group END
+        # pos_src_group END
 
-        detection_group = QWidget(self)
-        detection_group.setGeometry(32, 387, 386, 103)
-
-        # detection_group BEGIN
-        detection_tag_group = QWidget(detection_group)
-        detection_tag_group.setGeometry(0, 0, 86, 18)
+        detection_tag_group = QWidget()
+        detection_tag_group.setFixedSize(418, 18)
 
         # detection_tag_group BEGIN
         self.__point_icon2_label = QLabel(detection_tag_group)
-        self.__point_icon2_label.setGeometry(0, 6, 6, 6)
+        self.__point_icon2_label.setGeometry(16, 6, 6, 6)
         self.__point_icon2_label.setPixmap(QPixmap(settings['point2_icon']))
 
-        self.__detection_tag_label = QLabel('识别内容', detection_tag_group)
-        self.__detection_tag_label.setGeometry(14, 0, 72, 18)
+        self.__detection_tag_label = QLabel('识别模型', detection_tag_group)
+        self.__detection_tag_label.setGeometry(30, 0, 72, 18)
         self.__detection_tag_label.setFont(font_siyuan_cn_medium)
         self.__detection_tag_label.setStyleSheet(settings['detection_tag_label_ss'])
         # detection_tag_group END
 
+        detection_group = QWidget()
+        detection_group.setFixedSize(418, 70)
+
+        # detection_group BEGIN
         self.__detection_background = QWidget(detection_group)
-        self.__detection_background.setGeometry(0, 33, 386, 70)
+        self.__detection_background.setGeometry(16, 0, 386, 70)
         self.__detection_background.setObjectName('detectionBackground')
         self.__detection_background.setStyleSheet(
             f'QWidget#{self.__detection_background.objectName()} {{ {settings['detection_background_ss']} }}')
 
-        self.__detection_name_label = QLabel('-', detection_group)  # TODO need add scroll
-        self.__detection_name_label.setGeometry(132, 44, 122, 48)
-        self.__detection_name_label.setFont(font_siyuan_cn_regular)
-        self.__detection_name_label.setStyleSheet(settings['detection_name_label_ss'])
-        # detection_group END
+        self.__scroll_container = ScrollContainer()
+        self.__scroll_container.setFixedSize(0, 0)
 
-        time_group = QWidget(self)
-        time_group.setGeometry(32, 524, 386, 73)
+        self.__scroll_area = QScrollArea(detection_group)
+        self.__scroll_area.setGeometry(118, 11, 182 + 24, 48)  # 24 = 14+8+1*2 = gap + bar_width + bar_border * 2
+        self.__scroll_area.setWidget(self.__scroll_container)
+        self.__scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.__scroll_area.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.__scroll_area.setStyleSheet(f'''
+                    QScrollArea {{ background: transparent;}}
+                    {settings['scroll_bar_ss']}
+                    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; background: none;}}
+                    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none;}}
+                ''')
+
+        self.__scroll_item_font = font_siyuan_cn_regular
+        self.__scroll_item_ss = settings['detection_name_label_ss']
+
+        time_group = QWidget()
+        time_group.setFixedSize(418, 47)
 
         # time_group BEGIN
         start_time_group = QWidget(time_group)
-        start_time_group.setGeometry(0, 0, 170, 47)
+        start_time_group.setGeometry(16, 0, 170, 47)
 
         # start_time_group BEGIN
         self.__start_time_tag_label = QLabel('开始时间', start_time_group)
@@ -164,7 +195,7 @@ class TaskDetailWidget(QWidget):
         # start_time_group END
 
         end_time_group = QWidget(time_group)
-        end_time_group.setGeometry(203, 0, 170, 47)
+        end_time_group.setGeometry(219, 0, 170, 47)
 
         # end_time_group BEGIN
         self.__end_time_tag_label = QLabel('结束时间', end_time_group)
@@ -177,28 +208,63 @@ class TaskDetailWidget(QWidget):
         self.__end_time_label.setFont(font_siyuan_cn_regular)
         self.__end_time_label.setStyleSheet(settings['end_time_label_ss'])
         # end_time_group END
+        # time_group END
 
+        dashed_line_group = QWidget()
+        dashed_line_group.setFixedSize(418, 1)
+
+        # dashed_line_group BEGIN
         self.__dashed_line = QWidget(time_group)
-        self.__dashed_line.setGeometry(0, 72, 386, 1)
+        self.__dashed_line.setGeometry(16, 72, 386, 1)
         self.__dashed_line.setObjectName('dashedLine')
         self.__dashed_line.setStyleSheet(
             f'QWidget#{self.__dashed_line.objectName()} {{ {settings['dashed_line_ss']} }}')
-        # time_group END
+        # dashed_line_group END
 
-        creation_time_group = QWidget(self)
-        creation_time_group.setGeometry(32, 615, 386, 16)
+        creation_time_group = QWidget()
+        creation_time_group.setFixedSize(418, 16)
 
         # creation_time_group BEGIN
         self.__creation_time_tag_label = QLabel('创建时间', creation_time_group)
-        self.__creation_time_tag_label.setGeometry(0, 0, 64, 16)
+        self.__creation_time_tag_label.setGeometry(16, 0, 64, 16)
         self.__creation_time_tag_label.setFont(font_siyuan_cn_regular)
         self.__creation_time_tag_label.setStyleSheet(settings['creation_time_tag_label_ss'])
 
         self.__creation_time_label = QLabel('-', creation_time_group)
-        self.__creation_time_label.setGeometry(74, 0, 312, 16)
+        self.__creation_time_label.setGeometry(90, 0, 312, 16)
         self.__creation_time_label.setFont(font_siyuan_cn_regular)
         self.__creation_time_label.setStyleSheet(settings['creation_time_label_ss'])
         # creation_time_group END
+
+        vertical_layout = QVBoxLayout(self)
+        vertical_layout.setSpacing(0)
+        vertical_layout.setContentsMargins(16, 16, 16, 24)
+
+        vertical_layout.addWidget(title_group)
+        vertical_layout.addStretch(15)
+        vertical_layout.addWidget(line_group)
+        vertical_layout.addStretch(16)
+        vertical_layout.addWidget(ai_icon_group)
+        vertical_layout.addStretch(19)
+        vertical_layout.addWidget(task_name_group)
+        vertical_layout.addStretch(24)
+        vertical_layout.addWidget(pos_src_group)
+        vertical_layout.addStretch(34)
+        vertical_layout.addWidget(detection_tag_group)
+        vertical_layout.addStretch(15)
+        vertical_layout.addWidget(detection_group)
+        vertical_layout.addStretch(34)
+        vertical_layout.addWidget(time_group)
+        vertical_layout.addStretch(25)
+        vertical_layout.addWidget(dashed_line_group)
+        vertical_layout.addStretch(18)
+        vertical_layout.addWidget(creation_time_group)
+
+    def resizeEvent(self, event: QResizeEvent):
+        if event.oldSize().width() != -1 and event.oldSize().height() != -1:
+            self.__background.resize(event.size())
+
+        super().resizeEvent(event)
 
     def set_task(self, task_entry: dict | None = None):
         if task_entry:
@@ -215,7 +281,11 @@ class TaskDetailWidget(QWidget):
                 end_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + end_time
             self.__start_time_label.setText(str(start_time))
             self.__end_time_label.setText(str(end_time))
-            self.__detection_name_label.setText(str(task_entry['group_id']))  # TODO
+            for group_id in task_entry['group_id']:
+                group = GROUP_DAO.get_group_by_group_id(group_id)
+                model = MODEL_DAO.get_model_by_model_id(group['model_id'])
+                detection = f'{model['model_name']}v{model['model_version']}'
+                self.add_detection_signal.emit(detection)
 
         else:  # reset
             self.__task_name_label.setText('等待任务中')
@@ -226,4 +296,14 @@ class TaskDetailWidget(QWidget):
             self.__creation_time_label.setText('-')
             self.__start_time_label.setText('-')
             self.__end_time_label.setText('-')
-            self.__detection_name_label.setText('-')
+            self.reset_detection_signal.emit()
+
+    def add_detection(self, detection: str):
+        scroll_item = QLabel(detection)
+        scroll_item.setFixedSize(182, 24)
+        scroll_item.setFont(self.__scroll_item_font)
+        scroll_item.setStyleSheet(self.__scroll_item_ss)
+        self.__scroll_container.addItem(scroll_item)
+
+    def reset_detection(self):
+        self.__scroll_container.removeAll()

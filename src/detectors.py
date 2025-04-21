@@ -15,7 +15,7 @@ from ultralytics.engine.results import Results
 
 from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, \
     cal_intersection_ratio, update_counts, generate_video_generally, increment_path, \
-    generate_video, generate_hash20, put_text_ch
+    generate_video, generate_hash, put_text_ch
 
 
 class Detector(ABC):
@@ -105,7 +105,7 @@ class JamDetector(Detector):
         corpus_infos = []
 
         if self.__countdown <= 0:
-            dest = generate_hash20(f'{type(self).__name__}{time()}') + '.mp4'
+            dest = generate_hash(f'{type(self).__name__}{time()}') + '.mp4'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             generate_video_generally(
@@ -219,7 +219,7 @@ class QueueDetector(Detector):
         frame_copy = self.__buffered_result.orig_img.copy()
 
         if self.__countdown <= 0:
-            dest = generate_hash20(f'{type(self).__name__}{time()}') + '.jpg'
+            dest = generate_hash(f'{type(self).__name__}{time()}') + '.jpg'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             cv2.polylines(frame_copy, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
@@ -315,7 +315,7 @@ class DensityDetector(Detector):
         frame_copy = self.__buffered_result.orig_img.copy()
 
         if self.__countdown <= 0:
-            dest = generate_hash20(f'{type(self).__name__}{time()}') + '.jpg'
+            dest = generate_hash(f'{type(self).__name__}{time()}') + '.jpg'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             cv2.polylines(frame_copy, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
@@ -467,7 +467,7 @@ class SizeDetector(Detector):
             if self.__output_countdowns[idx] <= 0:
                 del self.__output_countdowns[idx]
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.jpg'
+                dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.jpg'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 retrieve = np.where(result.boxes.id == idx)[0]
@@ -576,7 +576,7 @@ class SectionDetector(Detector):
         corpus_infos = []
 
         if self.__countdown <= 0:
-            dest = generate_hash20(f'{type(self).__name__}{time()}') + '.mp4'
+            dest = generate_hash(f'{type(self).__name__}{time()}') + '.mp4'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             generate_video_generally(
@@ -731,7 +731,7 @@ class VelocityDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.mp4'
+                dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
@@ -817,7 +817,7 @@ class VolumeDetector(Detector):
         frame_copy = self.__buffered_result.orig_img.copy()
 
         if self.__countdown <= 0:
-            dest = generate_hash20(f'{type(self).__name__}{time()}') + '.jpg'
+            dest = generate_hash(f'{type(self).__name__}{time()}') + '.jpg'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             cv2.polylines(frame_copy, np.array([self.__det_zone]), isClosed=True, color=(0, 0, 255), thickness=2)
@@ -954,7 +954,7 @@ class PimDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.jpg'
+                dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.jpg'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 retrieve = np.where(result.boxes.id == idx)[0]
@@ -1104,7 +1104,7 @@ class ParkingDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.mp4'
+                dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
@@ -1239,7 +1239,7 @@ class WrongwayDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.mp4'
+                dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
@@ -1393,7 +1393,7 @@ class LanechangeDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.mp4'
+                dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
@@ -1545,7 +1545,7 @@ class SpeedingDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.mp4'
+                dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 generate_video(
@@ -1642,7 +1642,7 @@ class PlateDetector(Detector):
                 del self.__output_countdowns[plate]
                 self.__plate_set.add(plate)
 
-                dest = generate_hash20(f'{type(self).__name__}{plate}{time()}') + '.jpg'
+                dest = generate_hash(f'{type(self).__name__}{plate}{time()}') + '.jpg'
                 corpus_infos.append({'dest': dest, 'plate_no': plate})
 
                 key = next((k for k, v in self.__ret.items() if v == plate), None)
@@ -1766,7 +1766,7 @@ class TriangleDetector(Detector):
                 del self.__output_countdowns[idx]
                 self.__id_set.add(idx)
 
-                dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.jpg'
+                dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.jpg'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
 
                 retrieve = np.where(result.boxes.id == idx)[0]
@@ -1863,7 +1863,7 @@ class ObjectDetector(Detector):
         for idx in self.__ret:
             self.__id_set.add(idx)
 
-            dest = generate_hash20(f'{type(self).__name__}{idx}{time()}') + '.jpg'
+            dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.jpg'
             corpus_infos.append({'dest': dest, 'plate_no': None})
 
             xyxy = self.__ret[idx]

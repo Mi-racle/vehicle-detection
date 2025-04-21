@@ -2,9 +2,9 @@ from typing import Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QFontDatabase, QPixmap
-from PyQt6.QtWidgets import QWidget, QLabel, QScrollArea
+from PyQt6.QtWidgets import QWidget, QLabel
 
-from ui.ui_utils import ScrollContainer
+from ui.ui_utils import ScrollContainer, ScrollAreaWithShift
 
 
 class TaskListWidget(QWidget):
@@ -65,10 +65,10 @@ class TaskListWidget(QWidget):
             QFontDatabase.applicationFontFamilies(
                 QFontDatabase.addApplicationFont(settings['font_siyuan_cn_bold']))[0])
 
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
-        self.setObjectName('taskListWidget')
-        self.setStyleSheet(
-            f'{type(self).__name__}#{self.objectName()} {{ background-image: url({settings['background_image']}); }}')
+        self.__background = QLabel(self)
+        self.__background.setGeometry(0, 0, 450, 349)
+        self.__background.setPixmap(QPixmap(settings['background_image']))
+        self.__background.setScaledContents(True)
 
         title_group = QWidget(self)
         title_group.setGeometry(16, 16, 418, 44)
@@ -89,15 +89,15 @@ class TaskListWidget(QWidget):
         # title_group END
 
         self.__scroll_container = ScrollContainer()
-        self.__scroll_container.setFixedSize(386, 0)
+        self.__scroll_container.setFixedSize(0, 0)
 
-        self.__scroll_area = QScrollArea(self)
-        self.__scroll_area.setGeometry(32, 74, 386 + 24, 84 * 4)  # 24 = 14+8+1*2 = gap + bar_width + bar_border * 2
+        self.__scroll_area = ScrollAreaWithShift(self)
+        self.__scroll_area.setGeometry(32, 74, 386 + 24, 84 * 3)  # 24 = 14+8+1*2 = gap + bar_width + bar_border * 2
         self.__scroll_area.setWidget(self.__scroll_container)
-        self.__scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.__scroll_area.setFrameShape(ScrollAreaWithShift.Shape.NoFrame)
         self.__scroll_area.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.__scroll_area.setStyleSheet(f'''
-            QScrollArea {{ background: transparent;}}
+            {type(self.__scroll_area).__name__} {{ background: transparent;}}
             {settings['scroll_bar_ss']}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; background: none;}}
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none;}}

@@ -338,11 +338,11 @@ def update_counts(
             del counts[idx]
 
 
-def generate_hash20(string: str) -> str:
+def generate_hash(string: str, num=16) -> str:
     hash_object = hashlib.sha256(string.encode())
     hex_dig = hash_object.hexdigest()
 
-    return hex_dig[:20]
+    return hex_dig[:max(num, 1)]
 
 
 def in_analysis(curr_time: timedelta, start_time: timedelta | None, end_time: timedelta | None) -> bool:
