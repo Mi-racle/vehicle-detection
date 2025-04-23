@@ -338,7 +338,7 @@ class CorpusDetailWidget(QWidget):
             self.__start_time_label.setText(str(corpus_entry['start_time']))
             self.__end_time_label.setText(str(corpus_entry['end_time']))
             self.__plate_label.setText(corpus_entry['plate_no'] if corpus_entry['plate_no'] else '无')
-            self.__position_label.setText(corpus_entry['locations'])
+            self.__position_label.setText(str(corpus_entry['locations']))
             self.__loading_icon_label.setVisible(False)
             self.__loading_tag_label.setVisible(False)
             umat = self.__capture_image(corpus_entry['dest'])
