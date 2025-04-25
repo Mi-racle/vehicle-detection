@@ -1,7 +1,7 @@
 import math
 import re
 from abc import ABC, abstractmethod
-from collections import deque
+from collections import deque, OrderedDict
 from copy import deepcopy
 from time import time
 from typing import Any
@@ -15,7 +15,7 @@ from ultralytics.engine.results import Results
 
 from utils import cal_euclidean_distance, cal_intersection_points, cal_homography_matrix, reproject, \
     cal_intersection_ratio, update_counts, generate_video_generally, increment_path, \
-    generate_video, generate_hash, put_text_ch
+    generate_video, generate_hash, put_text_ch, LimitedDict
 
 
 class Detector(ABC):
@@ -37,33 +37,60 @@ class JamDetector(Detector):
             self,
             cls_indices: list,
             det_zone: list,
-            n_threshold: float,
+            lengths_m: list,
+            angle: float,
+            delta_second: float,
             video_length: float,
+            n_threshold: float,
+            v_threshold: float,
             fps: float
     ):
         self.__cls_indices = cls_indices
         self.__det_zone = det_zone
         self.__n_threshold = n_threshold
+        self.__v_threshold = v_threshold
         self.__fps = fps
+        self.__delta_frame_num = max(round(delta_second * fps), 1)
         self.__video_frame_num = max(round(video_length * fps), 1)
-        self.__result_buffer = deque(maxlen=self.__video_frame_num)
+        self.__result_buffer = deque(
+            maxlen=max(self.__delta_frame_num, self.__video_frame_num))
         self.__jam = False
         self.__countdown = self.__video_frame_num
 
+        radian = math.pi * angle / 180
+        rv0 = (0., 0.)
+        rv1 = (0., lengths_m[0])
+        rv3 = (lengths_m[-1] * math.sin(radian), lengths_m[-1] * math.cos(radian))
+
+        points = cal_intersection_points(rv1, rv3, lengths_m[1], lengths_m[2])
+
+        if len(points) == 1:
+            rv2 = points[0]
+
+        else:
+            d_a = cal_euclidean_distance(rv0, points[0])
+            d_b = cal_euclidean_distance(rv0, points[1])
+            rv2 = points[0] if d_a > d_b else points[1]
+
+        self.__homography_matrix = cal_homography_matrix(det_zone, [rv0, rv1, rv2, rv3])
+
     def update(
             self,
-            result: Results
-    ):
+            result: Results,
+            velocities: dict[float, float] | None = None
+    ) -> dict[float, float] | None:
         self.__result_buffer.append(result)
 
         if self.__jam:
             self.__countdown -= 1
             return
 
-        count = 0
-
         if result.boxes.id is None:
             return
+
+        count = 0
+        velocity_sum = 0
+        ret_velocities = velocities if velocities else {}
 
         for i, idx in enumerate(result.boxes.id):
             center = Point(result.boxes.xywh[i][:2])
@@ -71,10 +98,38 @@ class JamDetector(Detector):
                 continue
 
             count += 1
+            velocity = 0
 
-            if count >= self.__n_threshold:
-                self.__jam = True
-                return
+            if velocities and idx in velocities:
+                velocity = velocities[idx]
+
+            else:
+                for j, buf in enumerate(self.__result_buffer):
+                    if buf.boxes.id is None:
+                        continue
+
+                    retrieve = np.where(buf.boxes.id == idx)[0]
+
+                    if retrieve.shape[0] >= 1:
+                        list_idx = retrieve[0]
+                        prev_x, prev_y = buf.boxes.xywh[list_idx][:2]
+                        curr_x, curr_y = result.boxes.xywh[i][:2]
+
+                        points = np.array([[curr_x, curr_y], [prev_x, prev_y]])
+                        repro_points = reproject(points, self.__homography_matrix)
+                        distance = cal_euclidean_distance(repro_points[0], repro_points[1])
+                        velocity = distance / ((len(self.__result_buffer) - j) / self.__fps) * 3.6
+
+                        break
+
+                ret_velocities[idx] = velocity
+
+            velocity_sum += velocity
+
+        if count >= self.__n_threshold and velocity_sum / count < self.__v_threshold:
+            self.__jam = True
+
+        return ret_velocities if ret_velocities else None
 
     def plot(
             self,
@@ -348,12 +403,12 @@ class SizeDetector(Detector):
             delta_second: float,
             fps: float
     ):
-        self.__history_size = {}  # TODO recycle
+        self.__history_size = LimitedDict(maxlen=200)
         self.__cls_indices = cls_indices
         self.__det_line = det_line
         self.__thresholds = thresholds
         self.__result_buffer = deque(maxlen=max(round(delta_second * fps), 1))
-        self.__counts = {}
+        self.__counts = LimitedDict(maxlen=200)
         self.__output_countdowns = {}
         self.__ret: dict[float, str] = {}
 
@@ -497,6 +552,7 @@ class SizeDetector(Detector):
 
 class SectionDetector(Detector):
     """ Section Volume Detector """
+
     def __init__(
             self,
             cls_indices: list,
@@ -504,7 +560,7 @@ class SectionDetector(Detector):
             video_length: float,
             fps: float
     ):
-        self.__id_set = set()
+        self.__id_buffer = deque(maxlen=200)
         self.__cls_indices = cls_indices
         self.__det_line = det_line
         self.__fps = fps
@@ -525,7 +581,7 @@ class SectionDetector(Detector):
             if result.boxes.cls[i] not in self.__cls_indices:
                 continue
 
-            if idx in self.__id_set:
+            if idx in self.__id_buffer:
                 continue
 
             for j, buf in enumerate(list(self.__result_buffer)[-self.__delta_frame_num:]):
@@ -541,10 +597,10 @@ class SectionDetector(Detector):
 
                     delta_track = LineString([prev_center, curr_center])
                     if delta_track.intersects(LineString(self.__det_line)):
-                        self.__id_set.add(idx)
+                        self.__id_buffer.append(idx)
                         break
 
-        self.__text_buffer.append(f'Section volume: {len(self.__id_set)}')
+        self.__text_buffer.append(f'Section volume: {len(self.__id_buffer)}')
         self.__countdown -= 1
 
     def plot(
@@ -563,7 +619,7 @@ class SectionDetector(Detector):
         cv2.line(img, self.__det_line[0], self.__det_line[1], color=(0, 255, 0), thickness=2)
         cv2.putText(
             img,
-            f'Section volume: {len(self.__id_set)}',
+            f'Section volume: {len(self.__id_buffer)}',
             (0, 30 * stats_line),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
@@ -589,7 +645,7 @@ class SectionDetector(Detector):
             )
 
             self.__countdown = self.__video_frame_num
-            self.__id_set.clear()
+            self.__id_buffer.clear()
 
         return corpus_infos
 
@@ -609,7 +665,7 @@ class VelocityDetector(Detector):
             video_length: float,
             fps: float
     ):
-        self.__id_set = set()
+        self.__id_buffer = deque(maxlen=200)
         self.__cls_indices = cls_indices
         self.__det_zone = det_zone
         self.__fps = fps
@@ -619,7 +675,7 @@ class VelocityDetector(Detector):
             maxlen=max(self.__delta_frame_num, self.__video_frame_num))
         self.__velocity_buffer = deque(
             maxlen=max(self.__delta_frame_num, self.__video_frame_num))
-        self.__velocity_counts = {}
+        self.__velocity_counts = LimitedDict(maxlen=200)
         self.__output_countdowns = {}
         self.__ret: dict[float, str] = {}
 
@@ -678,7 +734,7 @@ class VelocityDetector(Detector):
 
             self.__ret[idx] = f'{velocity:.3f} km/h'
 
-            if idx not in self.__id_set:
+            if idx not in self.__id_buffer:
                 update_counts(
                     True,
                     True,
@@ -729,7 +785,7 @@ class VelocityDetector(Detector):
 
             if self.__output_countdowns[idx] <= 0:
                 del self.__output_countdowns[idx]
-                self.__id_set.add(idx)
+                self.__id_buffer.append(idx)
 
                 dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
@@ -758,7 +814,6 @@ class VolumeDetector(Detector):
             sampling_period: float,
             fps: float
     ):
-        self.__id_set = set()
         self.__cls_indices = cls_indices
         self.__det_zone = det_zone
         self.__sampling_frame_num = max(round(sampling_period * fps), 1)
@@ -850,14 +905,14 @@ class PimDetector(Detector):
             duration_threshold: float,
             fps: float
     ):
-        self.__id_set = set()
+        self.__id_buffer = deque(maxlen=200)
         self.__cls_indices = cls_indices
         self.__motor_zone = motor_zone
         self.__iou_threshold = iou_threshold
         self.__fps = fps
         self.__duration_frame_num = max(round(duration_threshold * fps), 1)
         self.__result_buffer = deque(maxlen=self.__duration_frame_num)
-        self.__pim_counts = {}
+        self.__pim_counts = LimitedDict(maxlen=200)
         self.__output_countdowns = {}
         self.__ret: dict[float, bool] = {}
 
@@ -895,7 +950,7 @@ class PimDetector(Detector):
 
             self.__ret[idx] = piming
 
-            if idx not in self.__id_set:
+            if idx not in self.__id_buffer:
                 update_counts(
                     piming,
                     True,
@@ -952,7 +1007,7 @@ class PimDetector(Detector):
 
             if self.__output_countdowns[idx] <= 0:
                 del self.__output_countdowns[idx]
-                self.__id_set.add(idx)
+                self.__id_buffer.append(idx)
 
                 dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.jpg'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
@@ -993,7 +1048,7 @@ class ParkingDetector(Detector):
             displacement_threshold: float,
             fps: float
     ):
-        self.__id_set = set()
+        self.__id_buffer = deque(maxlen=200)
         self.__cls_indices = cls_indices
         self.__noparking_zone = noparking_zone
         self.__displacement_threshold = displacement_threshold
@@ -1003,7 +1058,7 @@ class ParkingDetector(Detector):
         self.__video_frame_num = max(round(video_length * fps), 1)
         self.__result_buffer = deque(
             maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__parking_counts = {}
+        self.__parking_counts = LimitedDict(maxlen=200)
         self.__output_countdowns = {}
         self.__ret: dict[float, str] = {}
 
@@ -1052,7 +1107,7 @@ class ParkingDetector(Detector):
 
             self.__ret[idx] = state
 
-            if idx not in self.__id_set:
+            if idx not in self.__id_buffer:
                 update_counts(
                     state,
                     'illegally parked',
@@ -1102,7 +1157,7 @@ class ParkingDetector(Detector):
 
             if self.__output_countdowns[idx] <= 0:
                 del self.__output_countdowns[idx]
-                self.__id_set.add(idx)
+                self.__id_buffer.append(idx)
 
                 dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
@@ -1133,7 +1188,7 @@ class WrongwayDetector(Detector):
             fps: float,
             valid_direction='up'
     ):
-        self.__id_set = set()
+        self.__id_buffer = deque(maxlen=200)
         self.__cls_indices = cls_indices
         self.__det_zone = det_zone
         self.__fps = fps
@@ -1143,7 +1198,7 @@ class WrongwayDetector(Detector):
         self.__video_frame_num = max(round(video_length * fps), 1)
         self.__result_buffer = deque(
             maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
-        self.__wrongway_counts = {}
+        self.__wrongway_counts = LimitedDict(maxlen=200)
         self.__output_countdowns = {}
         self.__ret: dict[float, dict] = {}
 
@@ -1187,7 +1242,7 @@ class WrongwayDetector(Detector):
             wrongway = self.__is_wrongway(motion_vector)
             self.__ret[idx] = {'vector': motion_vector, 'wrongway': wrongway}
 
-            if idx not in self.__id_set:
+            if idx not in self.__id_buffer:
                 update_counts(
                     wrongway,
                     True,
@@ -1237,7 +1292,7 @@ class WrongwayDetector(Detector):
 
             if self.__output_countdowns[idx] <= 0:
                 del self.__output_countdowns[idx]
-                self.__id_set.add(idx)
+                self.__id_buffer.append(idx)
 
                 dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
@@ -1280,7 +1335,7 @@ class LanechangeDetector(Detector):
             solid_lines: list,
             fps: float
     ):
-        self.__id_set = set()
+        self.__id_buffer = deque(maxlen=200)
         self.__cls_indices = cls_indices
         self.__det_zone = det_zone
         self.__polygon = Polygon(det_zone)
@@ -1291,7 +1346,7 @@ class LanechangeDetector(Detector):
         self.__result_buffer = deque(
             maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
         self.__solid_lines = [LineString(solid_line) for solid_line in solid_lines]
-        self.__lanechange_counts = {}  # {id: count}
+        self.__lanechange_counts = LimitedDict(maxlen=200)  # {id: count}
         self.__output_countdowns = {}
         self.__ret: dict[float, bool] = {}
 
@@ -1333,7 +1388,7 @@ class LanechangeDetector(Detector):
 
             self.__ret[idx] = lanechange
 
-            if idx not in self.__id_set:
+            if idx not in self.__id_buffer:
                 update_counts(
                     lanechange,
                     True,
@@ -1391,7 +1446,7 @@ class LanechangeDetector(Detector):
 
             if self.__output_countdowns[idx] <= 0:
                 del self.__output_countdowns[idx]
-                self.__id_set.add(idx)
+                self.__id_buffer.append(idx)
 
                 dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
@@ -1424,7 +1479,7 @@ class SpeedingDetector(Detector):
             speed_threshold: float,
             fps: float
     ):
-        self.__id_set = set()
+        self.__id_buffer = deque(maxlen=200)
         self.__cls_indices = cls_indices
         self.__det_zone = det_zone
         self.__fps = fps
@@ -1434,7 +1489,7 @@ class SpeedingDetector(Detector):
         self.__result_buffer = deque(
             maxlen=max(self.__delta_frame_num, self.__duration_frame_num, self.__video_frame_num))
         self.__speed_threshold = speed_threshold
-        self.__velocity_counts = {}
+        self.__velocity_counts = LimitedDict(maxlen=200)
         self.__output_countdowns = {}
         self.__ret: dict[float, str] = {}
 
@@ -1494,7 +1549,7 @@ class SpeedingDetector(Detector):
 
             self.__ret[idx] = ('speeding' if speeding else 'not speeding') + f' ({velocity:.3f} km/h)'
 
-            if idx not in self.__id_set:
+            if idx not in self.__id_buffer:
                 update_counts(
                     speeding,
                     True,
@@ -1543,7 +1598,7 @@ class SpeedingDetector(Detector):
 
             if self.__output_countdowns[idx] <= 0:
                 del self.__output_countdowns[idx]
-                self.__id_set.add(idx)
+                self.__id_buffer.append(idx)
 
                 dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.mp4'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
@@ -1569,11 +1624,11 @@ class PlateDetector(Detector):
             duration_threshold: float,
             fps: float
     ):
-        self.__plate_set = set()
+        self.__plate_buffer = deque(maxlen=200)
         self.__fps = fps
         self.__duration_frame_num = max(round(duration_threshold * fps), 1)
         self.__result_buffer = deque(maxlen=self.__duration_frame_num)
-        self.__plate_counts = {}
+        self.__plate_counts = LimitedDict(maxlen=200)
         self.__output_countdowns = {}
         self.__ret: dict[int, str] = {}
 
@@ -1597,7 +1652,7 @@ class PlateDetector(Detector):
 
             self.__ret[i] = txt
 
-            if txt not in self.__plate_set:
+            if txt not in self.__plate_buffer:
                 update_counts(
                     True,
                     True,
@@ -1640,7 +1695,7 @@ class PlateDetector(Detector):
 
             if self.__output_countdowns[plate] <= 0:
                 del self.__output_countdowns[plate]
-                self.__plate_set.add(plate)
+                self.__plate_buffer.append(plate)
 
                 dest = generate_hash(f'{type(self).__name__}{plate}{time()}') + '.jpg'
                 corpus_infos.append({'dest': dest, 'plate_no': plate})
@@ -1693,11 +1748,11 @@ class TriangleDetector(Detector):
             duration_threshold: float,
             fps: float
     ):
-        self.__id_set = set()
+        self.__id_buffer = deque(maxlen=200)
         self.__fps = fps
         self.__duration_frame_num = max(round(duration_threshold * fps), 1)
         self.__result_buffer = deque(maxlen=self.__duration_frame_num)
-        self.__triangle_counts = {}
+        self.__triangle_counts = LimitedDict(maxlen=200)
         self.__output_countdowns = {}
         self.__ret: dict[float, bool] = {}
 
@@ -1715,7 +1770,7 @@ class TriangleDetector(Detector):
             triangle = True
             self.__ret[idx] = triangle
 
-            if idx not in self.__id_set:
+            if idx not in self.__id_buffer:
                 update_counts(
                     triangle,
                     True,
@@ -1764,7 +1819,7 @@ class TriangleDetector(Detector):
 
             if self.__output_countdowns[idx] <= 0:
                 del self.__output_countdowns[idx]
-                self.__id_set.add(idx)
+                self.__id_buffer.append(idx)
 
                 dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.jpg'
                 corpus_infos.append({'dest': dest, 'plate_no': None})
@@ -1800,7 +1855,7 @@ class ObjectDetector(Detector):
             cls_indices: list,
             fps: float
     ):
-        self.__id_set = set()
+        self.__id_buffer = deque(maxlen=200)
         self.__cls_indices = cls_indices
         self.__fps = fps
         self.__result_buffer = []
@@ -1817,17 +1872,17 @@ class ObjectDetector(Detector):
             return
 
         for i, idx in enumerate(result.boxes.id):
-            if result.boxes.cls[i] not in self.__cls_indices or idx in self.__id_set:
+            if result.boxes.cls[i] not in self.__cls_indices or idx in self.__id_buffer:
                 continue
 
             frame_height, frame_width = result.orig_img.shape[-3: -1]
             xyxy = result.boxes.xyxy[i]
 
             if (
-                xyxy[0] > 10 and
-                xyxy[1] > 10 and
-                xyxy[2] < frame_width - 10 and
-                xyxy[3] < frame_height - 10
+                    xyxy[0] > 10 and
+                    xyxy[1] > 10 and
+                    xyxy[2] < frame_width - 10 and
+                    xyxy[3] < frame_height - 10
             ):
                 self.__ret[idx] = xyxy
 
@@ -1861,7 +1916,7 @@ class ObjectDetector(Detector):
         result = self.__result_buffer[-1]
 
         for idx in self.__ret:
-            self.__id_set.add(idx)
+            self.__id_buffer.append(idx)
 
             dest = generate_hash(f'{type(self).__name__}{idx}{time()}') + '.jpg'
             corpus_infos.append({'dest': dest, 'plate_no': None})

@@ -1,8 +1,10 @@
 import glob
 import hashlib
+import inspect
 import math
 import os.path
 import re
+from collections import OrderedDict
 from datetime import timedelta
 from pathlib import Path
 from threading import Thread
@@ -391,3 +393,26 @@ def get_video_seconds(url: str) -> int:
         print(e)
 
         return 0
+
+
+def filter_kwargs(cls, params: dict) -> dict:
+    sig = inspect.signature(cls.__init__)
+    valid_keys = sig.parameters.keys()
+    return {k: v for k, v in params.items() if k in valid_keys}
+
+
+class LimitedDict(OrderedDict):
+    def __init__(self, maxlen, *args, **kwargs):
+        self.maxlen = maxlen
+        super().__init__(*args, **kwargs)
+        self._check_size()
+
+    def __setitem__(self, key, value):
+        if key in self:
+            del self[key]
+        super().__setitem__(key, value)
+        self._check_size()
+
+    def _check_size(self):
+        while len(self) > self.maxlen:
+            self.popitem(last=False)

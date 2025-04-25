@@ -35,6 +35,7 @@ class MainWindow(QWidget):
             self,
             width=1920,
             height=1102,
+            auto_size=True,
             output_dir='',
             online=True,
             use_gpu=False,
@@ -46,6 +47,11 @@ class MainWindow(QWidget):
         window_title = f'视觉AI语料库{'在' if online else '离'}线平台'
         gui_settings: dict = yaml.safe_load(open(f'ui/assets/{'on' if online else 'off'}line/settings.yaml', 'r'))
         settings = gui_settings['main_window']
+
+        if auto_size:
+            available_rect = QGuiApplication.primaryScreen().availableGeometry()
+            width = available_rect.width()
+            height = available_rect.height()
 
         self.setGeometry(0, 0, width, height)
         self.setWindowIcon(QIcon(settings['window_icon']))
@@ -84,7 +90,6 @@ class MainWindow(QWidget):
         self.__corpus_list.send_unselect_signal.connect(self.__corpus_detail.set_corpus)
         self.__tray.close_signal.connect(self.__safe_close)
 
-        # self.__old_size = (width, height)
         self.__old_size = QSize(width, height)
         self.__old_pos = QPoint(self.pos())
         self.__output_dir = output_dir

@@ -15,7 +15,7 @@ from detectors import ParkingDetector, WrongwayDetector, LanechangeDetector, Spe
     PimDetector, SectionDetector, VolumeDetector, DensityDetector, QueueDetector, JamDetector, PlateDetector, \
     TriangleDetector, SizeDetector, ObjectDetector
 from ocr.ocrer import OCRer
-from utils import get_file_by_substr, in_analysis
+from utils import get_file_by_substr, in_analysis, filter_kwargs
 
 
 def detect(
@@ -175,12 +175,18 @@ def detect(
 
         stats_line = 1
         subscript_line = 1
+        velocities: dict[float, float] | None = None
+
         for group in detectors:  # 'group' is group id
             detector = detectors[group]
             model = model_entries[group]
             dargs = dets_args[group]
 
-            detector.update(results[group])
+            kwargs = filter_kwargs(type(detector), {'result': results[group], 'velocities': velocities})
+            ret = detector.update(**kwargs)
+            if ret is not None:
+                velocities = ret
+
             plotted_frame = detector.plot(plotted_frame, stats_line, subscript_line)
             stats_line, subscript_line = detector.update_line(stats_line, subscript_line)
             corpus_infos = detector.output_corpus(output_dir, frame)

@@ -1,24 +1,10 @@
-import inspect
 import sys
 
 import yaml
 from PyQt6.QtWidgets import QApplication
 
 from ui.main_window import MainWindow
-from ui.title_bar import TitleBarWidget
-from ui.task_detail import TaskDetailWidget
-from ui.task_list import TaskListWidget
-from ui.corpus_list import CorpusListWidget
-from ui.corpus_detail import CorpusDetailWidget
-from ui.tray import Tray
-from ui.exit_dialog import ExitDialog
-
-
-def filter_kwargs(cls, params: dict) -> dict:
-    sig = inspect.signature(cls.__init__)
-    valid_keys = sig.parameters.keys()
-    return {k: v for k, v in params.items() if k in valid_keys}
-
+from utils import filter_kwargs
 
 if __name__ == '__main__':
     sys_config = yaml.safe_load(open(f'configs/sys_config.yaml', 'r'))

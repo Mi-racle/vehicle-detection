@@ -1,7 +1,6 @@
-#width: 1536
-#height: 816
 width: 1920
 height: 1102
+auto_size: true
 online: false
 log_dir: logs
 output_dir: runs
