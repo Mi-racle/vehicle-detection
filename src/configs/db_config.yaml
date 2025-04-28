@@ -9,7 +9,7 @@ autocommit: true
 # TiDB
 #host: 192.168.1.185
 #port: 4000
-#database: db_banma_traffic_analysis
+#database: db_banma_traffic_analysis_test
 #user: root
 #password: "JL@8jsam"
 #autocommit: true

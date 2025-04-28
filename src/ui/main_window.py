@@ -1,3 +1,5 @@
+import logging
+import os
 import sys
 import threading
 from collections import deque
@@ -26,6 +28,7 @@ from ui.ui_utils import ImageLabel
 
 class MainWindow(QWidget):
     __append_task_signal = pyqtSignal(str, str)
+    __pop_task_signal = pyqtSignal(int)
     __append_corpus_signal = pyqtSignal(dict, str)
     __reset_display_signal = pyqtSignal()
     __BENCH_WIDTH = 1920
@@ -35,8 +38,8 @@ class MainWindow(QWidget):
             self,
             width=1920,
             height=1102,
-            auto_size=True,
             output_dir='',
+            cache_minutes=60,
             online=True,
             use_gpu=False,
             output_to_sql=False,
@@ -47,11 +50,6 @@ class MainWindow(QWidget):
         window_title = f'视觉AI语料库{'在' if online else '离'}线平台'
         gui_settings: dict = yaml.safe_load(open(f'ui/assets/{'on' if online else 'off'}line/settings.yaml', 'r'))
         settings = gui_settings['main_window']
-
-        if auto_size:
-            available_rect = QGuiApplication.primaryScreen().availableGeometry()
-            width = available_rect.width()
-            height = available_rect.height()
 
         self.setGeometry(0, 0, width, height)
         self.setWindowIcon(QIcon(settings['window_icon']))
@@ -93,6 +91,7 @@ class MainWindow(QWidget):
         self.__old_size = QSize(width, height)
         self.__old_pos = QPoint(self.pos())
         self.__output_dir = output_dir
+        self.__cache_minutes = cache_minutes
         self.__online = online
         self.__use_gpu = use_gpu
         self.__output_to_sql = output_to_sql
@@ -106,6 +105,7 @@ class MainWindow(QWidget):
         self.__add_tasks_thread: QThread | None = None
         self.__run_tasks_thread: QThread | None = None
         self.__upload_corpora_thread: QThread | None = None
+        self.__collect_garbage_thread: QThread | None = None
         self.__closed = False
         self.__exit_dialog_state = ExitDialog.NOT_REMEMBER
 
@@ -117,6 +117,7 @@ class MainWindow(QWidget):
 
         self.__run_tasks_thread = QThread()
         self.__run_tasks_thread.run = lambda: self.__run_tasks()
+        self.__pop_task_signal.connect(self.__pop_task)
         self.__append_corpus_signal.connect(self.__append_corpus)
         self.__reset_display_signal.connect(self.__reset_display)
         self.__run_tasks_thread.start()
@@ -124,6 +125,10 @@ class MainWindow(QWidget):
         self.__upload_corpora_thread = QThread()
         self.__upload_corpora_thread.run = lambda: self.__upload_corpora()
         self.__upload_corpora_thread.start()
+
+        self.__collect_garbage_thread = QThread()
+        self.__collect_garbage_thread.run = lambda: self.__collect_garbage()
+        self.__collect_garbage_thread.start()
 
     def __maximize_or_revert(self):
         available_rect = QGuiApplication.primaryScreen().availableGeometry()
@@ -231,12 +236,11 @@ class MainWindow(QWidget):
                 if not repeated:
                     with self.__task_queue_lock:
                         self.__task_queue.append(task_entry)
-
-                    # start_time only for view
-                    start_time = task_entry['analysis_start_time'] or timedelta()
-                    if self.__online & ('execute_date' in task_entry):
-                        start_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + start_time
-                    self.__append_task_signal.emit(task_entry['task_name'], str(start_time))
+                        # start_time only for view
+                        start_time = task_entry.get('analysis_start_time') or timedelta()
+                        if self.__online & ('execute_date' in task_entry):
+                            start_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + start_time
+                        self.__append_task_signal.emit(task_entry['task_name'], str(start_time))
 
             sleep(1)
 
@@ -250,8 +254,8 @@ class MainWindow(QWidget):
 
             with self.__task_queue_lock:
                 self.__curr_task_entry = self.__task_queue.popleft()
-            self.__task_list.remove_task(0)
-            self.__task_detail.set_task(self.__curr_task_entry)
+                self.__pop_task_signal.emit(0)
+                self.__task_detail.set_task(self.__curr_task_entry)
 
             detect(
                 self.__curr_task_entry,
@@ -280,11 +284,39 @@ class MainWindow(QWidget):
             self.__output_to_sql and RESULT_DAO.insert_result(corpus)  # Update sql
             self.__output_to_obs and OBS_DAO.upload_file(f'{self.__output_dir}/{corpus['dest']}')  # Update obs
 
+    def __collect_garbage(self):
+        while not self.__closed:
+            if not os.path.exists(self.__output_dir):
+                continue
+
+            for filename in os.listdir(self.__output_dir):
+                file_path = f'{self.__output_dir}/{filename}'
+
+                if not os.path.isfile(file_path):
+                    continue
+
+                timestamp = os.stat(file_path).st_mtime
+                mend_time = datetime.fromtimestamp(timestamp)
+                curr_time = datetime.now()
+                diff_minutes = (curr_time - mend_time).total_seconds() / 60
+
+                if diff_minutes >= self.__cache_minutes:
+                    try:
+                        os.remove(file_path)
+
+                    except Exception as e:
+                        logging.error(e)
+
+            sleep(60)
+
     def __is_closed(self):
         return self.__closed
 
     def __append_task(self, task_name: str, start_time: str):
         self.__task_list.add_task(task_name, start_time)
+
+    def __pop_task(self, index: int):
+        self.__task_list.remove_task(index)
 
     def __append_corpus(self, entry: dict, camera_position: str):
         self.__corpus_list.add_corpus(entry, camera_position)

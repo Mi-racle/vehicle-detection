@@ -12,6 +12,7 @@ from typing import Sequence, Any
 
 import cv2
 import numpy as np
+import requests
 import sympy as sp
 from PIL import Image, ImageDraw, ImageFont
 from shapely.geometry.linestring import LineString
@@ -384,19 +385,19 @@ def put_text_ch(
 def get_video_seconds(url: str) -> int:
     try:
         cap = cv2.VideoCapture(url)
-        seconds = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) / cap.get(cv2.CAP_PROP_FPS))
+        seconds = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) / (cap.get(cv2.CAP_PROP_FPS) or 25))
         cap.release()
 
-        return seconds
+        return max(seconds, 1)
 
     except Exception as e:
         print(e)
 
-        return 0
+        return 1
 
 
-def filter_kwargs(cls, params: dict) -> dict:
-    sig = inspect.signature(cls.__init__)
+def filter_kwargs(func, params: dict) -> dict:
+    sig = inspect.signature(func)
     valid_keys = sig.parameters.keys()
     return {k: v for k, v in params.items() if k in valid_keys}
 
@@ -416,3 +417,19 @@ class LimitedDict(OrderedDict):
     def _check_size(self):
         while len(self) > self.maxlen:
             self.popitem(last=False)
+
+
+def download_file(url: str, save_path: str, cover=True) -> bool:
+    if os.path.exists(save_path) and not cover:
+        return True
+
+    response = requests.get(url, stream=True)
+
+    if response.status_code == 200:
+        with open(save_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        return True
+
+    else:
+        return False

@@ -274,8 +274,8 @@ class TaskDetailWidget(QWidget):
             self.__video_source_label.setText(task_entry['url'])
             self.__video_source_label.setToolTip(self.__video_source_label.text())
             self.__creation_time_label.setText(str(task_entry['create_time']))
-            start_time = task_entry['analysis_start_time'] or timedelta()
-            end_time = task_entry['analysis_end_time'] or timedelta(seconds=get_video_seconds(task_entry['url']))
+            start_time = task_entry.get('analysis_start_time') or timedelta()
+            end_time = task_entry.get('analysis_end_time') or timedelta(seconds=get_video_seconds(task_entry['url']))
             if 'execute_date' in task_entry:
                 start_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + start_time
                 end_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + end_time
@@ -301,6 +301,7 @@ class TaskDetailWidget(QWidget):
     def add_detection(self, detection: str):
         scroll_item = QLabel(detection)
         scroll_item.setFixedSize(182, 24)
+        scroll_item.setAlignment(Qt.AlignmentFlag.AlignCenter)
         scroll_item.setFont(self.__scroll_item_font)
         scroll_item.setStyleSheet(self.__scroll_item_ss)
         self.__scroll_container.addItem(scroll_item)

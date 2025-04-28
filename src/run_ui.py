@@ -1,6 +1,7 @@
 import sys
 
 import yaml
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QApplication
 
 from ui.main_window import MainWindow
@@ -10,7 +11,7 @@ if __name__ == '__main__':
     sys_config = yaml.safe_load(open(f'configs/sys_config.yaml', 'r'))
     gui_settings: dict = yaml.safe_load(open(f'ui/assets/{'on' if sys_config['online'] else 'off'}line/settings.yaml', 'r'))
 
-    kwargs = filter_kwargs(MainWindow, sys_config)
+    kwargs = filter_kwargs(MainWindow.__init__, sys_config)
 
     app = QApplication(sys.argv)
     # app.setQuitOnLastWindowClosed(False)
@@ -25,5 +26,8 @@ if __name__ == '__main__':
     # window = ExitDialog(gui_settings['exit_dialog'])
 
     window.show()
+
+    if sys_config.get('auto_size'):
+        window.resize(QGuiApplication.primaryScreen().availableGeometry().size())
 
     app.exec()

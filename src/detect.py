@@ -33,7 +33,7 @@ def detect(
         update_task_status = TASK_OFFLINE_DAO.update_offline_task_status_by_id
 
     cap_in = cv2.VideoCapture(task_entry['url'])
-    fps = cap_in.get(cv2.CAP_PROP_FPS)
+    fps = (cap_in.get(cv2.CAP_PROP_FPS) or 25)
 
     det_models: dict[str, dict[str, Any]] = {}
     detectors = {}  # {'group_id': Detector}
@@ -60,7 +60,7 @@ def detect(
                     mdl = OCRer(
                         det_model_path=os.path.join(model_entry['file_path'], det_file),
                         rec_model_path=os.path.join(model_entry['file_path'], rec_file),
-                        use_gpu=use_gpu
+                        use_gpu=use_gpu & torch.cuda.is_available()
                     )
             if mdl:
                 det_models[model_entry['file_path']] = {
@@ -182,7 +182,7 @@ def detect(
             model = model_entries[group]
             dargs = dets_args[group]
 
-            kwargs = filter_kwargs(type(detector), {'result': results[group], 'velocities': velocities})
+            kwargs = filter_kwargs(detector.update, {'result': results[group], 'velocities': velocities})
             ret = detector.update(**kwargs)
             if ret is not None:
                 velocities = ret
@@ -211,6 +211,9 @@ def detect(
                 if online & ('execute_date' in task_entry):
                     start_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + start_time
                     end_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + end_time
+
+                start_time = timedelta(seconds=round(start_time.total_seconds()))
+                end_time = timedelta(seconds=round(end_time.total_seconds()))
 
                 entry = {
                     'model_name': model['model_name'],
@@ -241,4 +244,5 @@ def detect(
 
     cap_in.release()
 
-    update_task_status(task_entry['id'], 1 if end_as_designed else -1)
+    # TODO
+    # update_task_status(task_entry['id'], 1 if end_as_designed else -1)

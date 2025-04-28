@@ -1,9 +1,10 @@
+log_dir: logs
+auto_size: true
 width: 1920
 height: 1102
-auto_size: true
-online: false
-log_dir: logs
 output_dir: runs
+cache_minutes: 60
+online: false
 use_gpu: true
-output_to_sql: false
+output_to_sql: true
 output_to_obs: false

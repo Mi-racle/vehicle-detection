@@ -1,5 +1,6 @@
 from typing import Optional, Callable
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QFontDatabase, QPixmap, QResizeEvent
 from PyQt6.QtWidgets import QWidget, QLabel
@@ -220,7 +221,7 @@ class CorpusListWidget(QWidget):
         self.__title_line_label.setScaledContents(True)
         # title_group END
 
-        self.__scroll_container = ScrollContainer()
+        self.__scroll_container = ScrollContainer(maxlen=1000)
         self.__scroll_container.setFixedSize(0, 0)
 
         self.__scroll_area = ScrollAreaWithShift(self)
@@ -289,7 +290,7 @@ class CorpusListWidget(QWidget):
         corpus_entry: dict | None = None
 
         if selected:
-            if self.__selected_item:
+            if self.__selected_item and not sip.isdeleted(self.__selected_item):
                 self.__selected_item.select(False)
 
             self.__selected_item: CorpusListWidget.ScrollItemWidget = self.__scroll_container.getItem(object_name)

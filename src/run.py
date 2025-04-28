@@ -4,6 +4,7 @@ import sys
 from datetime import datetime
 
 import yaml
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QApplication
 
 from ui.main_window import MainWindow
@@ -37,13 +38,17 @@ if __name__ == '__main__':
 
     init_log(sys_config['log_dir'])
 
-    kwargs = filter_kwargs(MainWindow, sys_config)
+    kwargs = filter_kwargs(MainWindow.__init__, sys_config)
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
     window = MainWindow(**kwargs)
     window.show()
+
+    if sys_config.get('auto_size'):
+        window.resize(QGuiApplication.primaryScreen().availableGeometry().size())
+
     window.func()
 
     sys.exit(app.exec())

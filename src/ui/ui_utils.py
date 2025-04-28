@@ -47,7 +47,7 @@ class ImageLabel(QLabel):
 
 
 class ScrollContainer(QWidget):
-    def __init__(self):
+    def __init__(self, maxlen=100):
         super().__init__()
 
         self.setStyleSheet('background: transparent;')
@@ -56,9 +56,15 @@ class ScrollContainer(QWidget):
         self.__layout.setSpacing(0)
         self.__layout.setContentsMargins(0, 0, 0, 0)
 
+        self.__maxlen = maxlen
         self.__items: list[QWidget] = []
 
     def addItem(self, item: QWidget):
+        if len(self.__items) >= self.__maxlen:
+            item_pop = self.__items.pop(0)
+            self.__layout.removeWidget(item_pop)
+            item_pop.deleteLater()
+
         self.__layout.addWidget(item)
         self.__items.append(item)
         self.__updateSize()

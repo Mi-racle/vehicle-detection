@@ -698,7 +698,8 @@ class VelocityDetector(Detector):
 
     def update(
             self,
-            result: Results
+            result: Results,
+            velocities: dict[float, float] | None = None
     ):
         self.__result_buffer.append(result)
         self.__ret = {}
@@ -714,23 +715,27 @@ class VelocityDetector(Detector):
 
             velocity = 0
 
-            for j, buf in enumerate(self.__result_buffer):
-                if buf.boxes.id is None:
-                    continue
+            if velocities and idx in velocities:
+                velocity = velocities[idx]
 
-                retrieve = np.where(buf.boxes.id == idx)[0]
+            else:
+                for j, buf in enumerate(self.__result_buffer):
+                    if buf.boxes.id is None:
+                        continue
 
-                if retrieve.shape[0] >= 1:
-                    list_idx = retrieve[0]
-                    prev_x, prev_y = buf.boxes.xywh[list_idx][:2]
-                    curr_x, curr_y = result.boxes.xywh[i][:2]
+                    retrieve = np.where(buf.boxes.id == idx)[0]
 
-                    points = np.array([[curr_x, curr_y], [prev_x, prev_y]])
-                    repro_points = reproject(points, self.__homography_matrix)
-                    distance = cal_euclidean_distance(repro_points[0], repro_points[1])
-                    velocity = distance / ((len(self.__result_buffer) - j) / self.__fps) * 3.6
+                    if retrieve.shape[0] >= 1:
+                        list_idx = retrieve[0]
+                        prev_x, prev_y = buf.boxes.xywh[list_idx][:2]
+                        curr_x, curr_y = result.boxes.xywh[i][:2]
 
-                    break
+                        points = np.array([[curr_x, curr_y], [prev_x, prev_y]])
+                        repro_points = reproject(points, self.__homography_matrix)
+                        distance = cal_euclidean_distance(repro_points[0], repro_points[1])
+                        velocity = distance / ((len(self.__result_buffer) - j) / self.__fps) * 3.6
+
+                        break
 
             self.__ret[idx] = f'{velocity:.3f} km/h'
 
@@ -1512,7 +1517,8 @@ class SpeedingDetector(Detector):
 
     def update(
             self,
-            result: Results
+            result: Results,
+            velocities: dict[float, float] | None = None
     ):
         self.__result_buffer.append(result)
         self.__ret = {}
@@ -1526,26 +1532,30 @@ class SpeedingDetector(Detector):
                 continue
 
             velocity = 0
-            speeding = False
 
-            for j, buf in enumerate(self.__result_buffer):
-                if buf.boxes.id is None:
-                    continue
+            if velocities and idx in velocities:
+                velocity = velocities[idx]
 
-                retrieve = np.where(buf.boxes.id == idx)[0]
+            else:
+                for j, buf in enumerate(self.__result_buffer):
+                    if buf.boxes.id is None:
+                        continue
 
-                if retrieve.shape[0] >= 1:
-                    list_idx = retrieve[0]
-                    prev_x, prev_y = buf.boxes.xywh[list_idx][:2]
-                    curr_x, curr_y = result.boxes.xywh[i][:2]
+                    retrieve = np.where(buf.boxes.id == idx)[0]
 
-                    points = np.array([[curr_x, curr_y], [prev_x, prev_y]])
-                    repro_points = reproject(points, self.__homography_matrix)
-                    distance = cal_euclidean_distance(repro_points[0], repro_points[1])
-                    velocity = distance / ((len(self.__result_buffer) - j) / self.__fps) * 3.6
-                    speeding = velocity >= self.__speed_threshold
+                    if retrieve.shape[0] >= 1:
+                        list_idx = retrieve[0]
+                        prev_x, prev_y = buf.boxes.xywh[list_idx][:2]
+                        curr_x, curr_y = result.boxes.xywh[i][:2]
 
-                    break
+                        points = np.array([[curr_x, curr_y], [prev_x, prev_y]])
+                        repro_points = reproject(points, self.__homography_matrix)
+                        distance = cal_euclidean_distance(repro_points[0], repro_points[1])
+                        velocity = distance / ((len(self.__result_buffer) - j) / self.__fps) * 3.6
+
+                        break
+
+            speeding = velocity >= self.__speed_threshold
 
             self.__ret[idx] = ('speeding' if speeding else 'not speeding') + f' ({velocity:.3f} km/h)'
 
