@@ -3,6 +3,7 @@ from db.group import TblGroupDAO
 from db.model import TblModelDAO
 from db.result import TblResultDAO
 from db.storage import ObsDAO
+from db.syscon import SysconDAO
 from db.task_offline import TblTaskOfflineDAO
 from db.task_online import TblTaskOnlineDAO
 
@@ -13,6 +14,7 @@ MODEL_DAO = TblModelDAO(DB_CONFIG_PATH)
 RESULT_DAO = TblResultDAO(DB_CONFIG_PATH)
 TASK_OFFLINE_DAO = TblTaskOfflineDAO(DB_CONFIG_PATH)
 TASK_ONLINE_DAO = TblTaskOnlineDAO(DB_CONFIG_PATH)
+SYSCON_DAO = SysconDAO(DB_CONFIG_PATH)
 
 OBS_CONFIG_PATH = 'configs/obs_config.yaml'
 OBS_DAO = ObsDAO(OBS_CONFIG_PATH)

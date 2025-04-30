@@ -10,17 +10,18 @@ import torch.cuda
 from PyQt6.QtCore import pyqtSignal
 from ultralytics import YOLO
 
-from db import GROUP_DAO, TASK_ONLINE_DAO, TASK_OFFLINE_DAO, MODEL_DAO
+from db import GROUP_DAO, TASK_ONLINE_DAO, TASK_OFFLINE_DAO, MODEL_DAO, SYSCON_DAO
 from detectors import ParkingDetector, WrongwayDetector, LanechangeDetector, SpeedingDetector, VelocityDetector, \
     PimDetector, SectionDetector, VolumeDetector, DensityDetector, QueueDetector, JamDetector, PlateDetector, \
     TriangleDetector, SizeDetector, ObjectDetector
 from ocr.ocrer import OCRer
-from utils import get_file_by_substr, in_analysis, filter_kwargs
+from utils import get_file_by_substr, in_analysis, filter_kwargs, download_file, generate_hash
 
 
 def detect(
         task_entry: dict,
-        output_dir='',
+        output_dir='runs',
+        weight_dir='weights',
         online=False,
         use_gpu=False,
         is_closed: Callable[[], bool] | None = None,
@@ -43,6 +44,9 @@ def detect(
     for group_id in task_entry['group_id']:
         group_entry = GROUP_DAO.get_group_by_group_id(group_id)
 
+        if not group_entry:
+            continue
+
         model_entry = MODEL_DAO.get_model_by_model_id(group_entry['model_id'])
         det_args = group_entry['args']
 
@@ -51,25 +55,54 @@ def detect(
 
         if model_entry['file_path'] not in det_models:
             mdl = None
+            model_paths = model_entry['file_path'].split(',')
+
             if 'yolo' in model_entry['file_path']:
-                mdl = YOLO(model_entry['file_path'])
+                model_path = model_paths[0]
+                model_url = f'{weight_dir}/{os.path.basename(model_path)}'
+
+                if not os.path.exists(model_url):
+                    if not download_file(url_prefix + model_path, model_url):
+                        update_task_status(task_entry['id'], -1)
+                        cap_in.release()
+                        return
+
+                mdl = YOLO(model_url)
+
             elif 'ocr' in model_entry['file_path'] and os.path.isdir(model_entry['file_path']):
-                det_file = get_file_by_substr(model_entry['file_path'], 'det')
-                rec_file = get_file_by_substr(model_entry['file_path'], 'rec')
+                ocr_dir = 'ocr_' + generate_hash(model_entry['file_path'], num=20)
+                dir_path = f'{weight_dir}/{ocr_dir}'
+                model_urls = [f'{dir_path}/{os.path.basename(model_path)}' for model_path in model_paths]
+                url_prefix = SYSCON_DAO.get_url_prefix()
+
+                for model_i, model_path in enumerate(model_paths):
+                    model_url = model_urls[model_i]
+
+                    if not download_file(url_prefix + model_path, model_url):
+                        update_task_status(task_entry['id'], -1)
+                        cap_in.release()
+                        return
+
+                det_file = get_file_by_substr(dir_path, 'det')
+                rec_file = get_file_by_substr(dir_path, 'rec')
+
                 if det_file and rec_file:
                     mdl = OCRer(
                         det_model_path=os.path.join(model_entry['file_path'], det_file),
                         rec_model_path=os.path.join(model_entry['file_path'], rec_file),
                         use_gpu=use_gpu & torch.cuda.is_available()
                     )
+
             if mdl:
                 det_models[model_entry['file_path']] = {
                     'model': mdl,
                     'groups': [group_id],
                     'classes': det_args['cls_indices'] if det_args.get('cls_indices') else None
                 }
+
         else:
             det_models[model_entry['file_path']]['groups'].append(group_id)
+
             if det_args.get('cls_indices'):
                 classes = det_models[model_entry['file_path']]['classes']
                 det_models[model_entry['file_path']]['classes'] = list(set(classes + det_args['cls_indices']))
@@ -208,12 +241,12 @@ def detect(
                     start_time = timer - td_video_length
                     end_time = timer - td_diff
 
-                if online & ('execute_date' in task_entry):
-                    start_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + start_time
-                    end_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + end_time
-
                 start_time = timedelta(seconds=round(start_time.total_seconds()))
                 end_time = timedelta(seconds=round(end_time.total_seconds()))
+
+                if online and ('execute_date' in task_entry):
+                    start_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + start_time
+                    end_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + end_time
 
                 entry = {
                     'model_name': model['model_name'],
@@ -221,7 +254,7 @@ def detect(
                     'camera_type': task_entry['camera_type'],
                     'camera_id': task_entry['camera_id'],
                     'video_type': 1 if online else 2,
-                    'source': task_entry['url'],
+                    'source': task_entry.get('download_url') or task_entry['url'],
                     'dest': corpus_info['dest'],
                     'start_time': start_time,
                     'end_time': end_time,
@@ -243,6 +276,5 @@ def detect(
         sleep(max(1 / fps - total_cost, 0))
 
     cap_in.release()
-
     # TODO
-    # update_task_status(task_entry['id'], 1 if end_as_designed else -1)
+    update_task_status(task_entry['id'], 1 if end_as_designed else -1)

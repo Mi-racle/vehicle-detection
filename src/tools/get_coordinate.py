@@ -13,7 +13,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # parser.add_argument('-s', type=str, default='D:/xxs-signs/vehicle-detection/resources/image.png')
-    parser.add_argument('-s', type=str, default='D:/xxs-signs/vehicle-detection/resources/hangzhou.png')
+    parser.add_argument('-s', type=str, default='D:/xxs-signs/vehicle-detection/resources/traffic.png')
 
     args = parser.parse_args()
 

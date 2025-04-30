@@ -271,7 +271,7 @@ class TaskDetailWidget(QWidget):
             self.__task_name_label.setText(task_entry['task_name'])
             self.__camera_position_label.setText(task_entry['description'])
             self.__camera_position_label.setToolTip(self.__camera_position_label.text())
-            self.__video_source_label.setText(task_entry['url'])
+            self.__video_source_label.setText(task_entry.get('download_url') or task_entry['url'])
             self.__video_source_label.setToolTip(self.__video_source_label.text())
             self.__creation_time_label.setText(str(task_entry['create_time']))
             start_time = task_entry.get('analysis_start_time') or timedelta()
@@ -283,6 +283,8 @@ class TaskDetailWidget(QWidget):
             self.__end_time_label.setText(str(end_time))
             for group_id in task_entry['group_id']:
                 group = GROUP_DAO.get_group_by_group_id(group_id)
+                if not group:
+                    continue
                 model = MODEL_DAO.get_model_by_model_id(group['model_id'])
                 detection = f'{model['model_name']}v{model['model_version']}'
                 self.add_detection_signal.emit(detection)

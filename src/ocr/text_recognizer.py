@@ -300,7 +300,6 @@ class TextRecognizer(BaseOCRV20):
             width_list.append(img.shape[1] / float(img.shape[0]))
         # Sorting can speed up the recognition process
         indices = np.argsort(np.array(width_list))
-
         # rec_res = []
         rec_res = [['', 0.0]] * img_num
         batch_num = self.rec_batch_num
@@ -319,11 +318,7 @@ class TextRecognizer(BaseOCRV20):
                     norm_img, _, _, valid_ratio = self.resize_norm_img_sar(
                         img_list[indices[ino]], self.rec_image_shape)
                     norm_img = norm_img[np.newaxis, :]
-                    valid_ratio = np.expand_dims(valid_ratio, axis=0)
-                    valid_ratios = []
-                    valid_ratios.append(valid_ratio)
                     norm_img_batch.append(norm_img)
-
                 elif self.rec_algorithm == "SVTR":
                     norm_img = self.resize_norm_img_svtr(img_list[indices[ino]],
                                                          self.rec_image_shape)

@@ -14,7 +14,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint
 from PyQt6.QtGui import QIcon, QResizeEvent, QGuiApplication, QCloseEvent, QMoveEvent
 from PyQt6.QtWidgets import QWidget, QDialog
 
-from db import TASK_ONLINE_DAO, TASK_OFFLINE_DAO, RESULT_DAO, OBS_DAO
+from db import TASK_ONLINE_DAO, TASK_OFFLINE_DAO, RESULT_DAO, OBS_DAO, SYSCON_DAO
 from ui.corpus_detail import CorpusDetailWidget
 from ui.corpus_list import CorpusListWidget
 from ui.exit_dialog import ExitDialog
@@ -24,6 +24,7 @@ from ui.task_list import TaskListWidget
 from ui.title_bar import TitleBarWidget
 from ui.tray import Tray
 from ui.ui_utils import ImageLabel
+from utils import download_file
 
 
 class MainWindow(QWidget):
@@ -38,7 +39,9 @@ class MainWindow(QWidget):
             self,
             width=1920,
             height=1102,
-            output_dir='',
+            output_dir='runs',
+            weight_dir='weights',
+            video_dir='videos',
             cache_minutes=60,
             online=True,
             use_gpu=False,
@@ -91,6 +94,8 @@ class MainWindow(QWidget):
         self.__old_size = QSize(width, height)
         self.__old_pos = QPoint(self.pos())
         self.__output_dir = output_dir
+        self.__weight_dir = weight_dir
+        self.__video_dir = video_dir
         self.__cache_minutes = cache_minutes
         self.__online = online
         self.__use_gpu = use_gpu
@@ -238,7 +243,7 @@ class MainWindow(QWidget):
                         self.__task_queue.append(task_entry)
                         # start_time only for view
                         start_time = task_entry.get('analysis_start_time') or timedelta()
-                        if self.__online & ('execute_date' in task_entry):
+                        if self.__online and ('execute_date' in task_entry):
                             start_time = datetime.combine(task_entry['execute_date'], datetime.min.time()) + start_time
                         self.__append_task_signal.emit(task_entry['task_name'], str(start_time))
 
@@ -255,17 +260,39 @@ class MainWindow(QWidget):
             with self.__task_queue_lock:
                 self.__curr_task_entry = self.__task_queue.popleft()
                 self.__pop_task_signal.emit(0)
-                self.__task_detail.set_task(self.__curr_task_entry)
+
+            if not self.__online:
+                video_url = f'{self.__video_dir}/{os.path.basename(self.__curr_task_entry['url'])}'
+
+                if not os.path.exists(video_url):
+                    download_url = (
+                            self.__curr_task_entry['source'] and
+                            SYSCON_DAO.get_url_prefix() + self.__curr_task_entry['url'] or
+                            self.__curr_task_entry['url']
+                    )
+
+                    if not download_file(download_url, video_url):
+                        continue
+
+                    self.__curr_task_entry['download_url'] = download_url
+
+                self.__curr_task_entry['url'] = video_url
+
+            self.__task_detail.set_task(self.__curr_task_entry)
 
             detect(
                 self.__curr_task_entry,
                 self.__output_dir,
+                self.__weight_dir,
                 self.__online,
                 self.__use_gpu,
                 self.__is_closed,
                 self.__append_corpus_signal,
                 self.__set_display
             )
+
+            if os.path.exists(self.__curr_task_entry['url']):
+                os.remove(self.__curr_task_entry['url'])
 
             with self.__curr_task_lock:
                 self.__curr_task_entry = None

@@ -85,7 +85,7 @@ class TblTaskOfflineDAO:
                         if camera:
                             fetch['camera_id'] = camera['camera_id']
                             fetch['camera_type'] = camera['type']
-                            fetch['url'] = camera['url']
+                            # fetch['url'] = camera['url']
                             fetch['matrix'] = camera['matrix']  # TODO
                             fetch['description'] = camera['description']
 

@@ -426,9 +426,12 @@ def download_file(url: str, save_path: str, cover=True) -> bool:
     response = requests.get(url, stream=True)
 
     if response.status_code == 200:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
         with open(save_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
+
         return True
 
     else:

@@ -1,4 +1,3 @@
-import json
 import logging
 
 import mysql.connector
@@ -6,18 +5,20 @@ import yaml
 from mysql.connector import Error
 
 
-class TblGroupDAO:
+class SysconDAO:
     def __init__(self, config_path: str):
         self.__config: dict = yaml.safe_load(open(config_path, 'r'))
         self.__connection = mysql.connector.connect(**self.__config)
-        self._TABLE_NAME = 'tbl_group'
+        self._TABLE_NAME = 'sys_config'
 
     def __del__(self):
         if self.__connection and self.__connection.is_connected():
             self.__connection.close()
 
-    def get_group_by_group_id(self, group_id: int):
+    def get_url_prefix(self):
         cursor = None
+        column_name = 'config_value'
+        config_key = 'httpUrl'
 
         try:
             if not self.__connection.is_connected():
@@ -25,17 +26,14 @@ class TblGroupDAO:
 
             cursor = self.__connection.cursor(dictionary=True)
 
-            query = f'''SELECT * FROM {self._TABLE_NAME} WHERE group_id = %s'''
+            query = f'''SELECT {column_name} FROM {self._TABLE_NAME} WHERE config_key = %s'''
 
-            cursor.execute(query, (group_id,))
+            cursor.execute(query, (config_key, ))
             logging.info(f'Entry successfully selected from {self._TABLE_NAME}')
 
-            group = cursor.fetchone()
+            config_key = cursor.fetchone()[column_name]
 
-            if group and 'args' in group:
-                group['args'] = json.loads(group['args'])
-
-            return group
+            return config_key
 
         except Error as e:
             logging.info(f'Error: {e}')
