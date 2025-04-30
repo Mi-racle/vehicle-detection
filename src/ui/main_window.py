@@ -262,21 +262,19 @@ class MainWindow(QWidget):
                 self.__pop_task_signal.emit(0)
 
             if not self.__online:
-                video_url = f'{self.__video_dir}/{os.path.basename(self.__curr_task_entry['url'])}'
+                video_url = os.path.join(self.__video_dir, os.path.basename(self.__curr_task_entry['url']))
+                download_url = (
+                        self.__curr_task_entry['source'] and
+                        SYSCON_DAO.get_url_prefix() + self.__curr_task_entry['url'] or
+                        self.__curr_task_entry['url']
+                )
+
+                self.__curr_task_entry['download_url'] = download_url
+                self.__curr_task_entry['url'] = video_url
 
                 if not os.path.exists(video_url):
-                    download_url = (
-                            self.__curr_task_entry['source'] and
-                            SYSCON_DAO.get_url_prefix() + self.__curr_task_entry['url'] or
-                            self.__curr_task_entry['url']
-                    )
-
                     if not download_file(download_url, video_url):
                         continue
-
-                    self.__curr_task_entry['download_url'] = download_url
-
-                self.__curr_task_entry['url'] = video_url
 
             self.__task_detail.set_task(self.__curr_task_entry)
 

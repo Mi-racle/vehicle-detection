@@ -69,14 +69,17 @@ def detect(
 
                 mdl = YOLO(model_url)
 
-            elif 'ocr' in model_entry['file_path'] and os.path.isdir(model_entry['file_path']):
+            elif 'ocr' in model_entry['file_path']:
                 ocr_dir = 'ocr_' + generate_hash(model_entry['file_path'], num=20)
-                dir_path = f'{weight_dir}/{ocr_dir}'
-                model_urls = [f'{dir_path}/{os.path.basename(model_path)}' for model_path in model_paths]
+                dir_path = os.path.join(weight_dir, ocr_dir)
+                model_urls = [os.path.join(dir_path, os.path.basename(model_path)) for model_path in model_paths]
                 url_prefix = SYSCON_DAO.get_url_prefix()
 
                 for model_i, model_path in enumerate(model_paths):
                     model_url = model_urls[model_i]
+
+                    if os.path.exists(model_url):
+                        continue
 
                     if not download_file(url_prefix + model_path, model_url):
                         update_task_status(task_entry['id'], -1)
@@ -88,8 +91,8 @@ def detect(
 
                 if det_file and rec_file:
                     mdl = OCRer(
-                        det_model_path=os.path.join(model_entry['file_path'], det_file),
-                        rec_model_path=os.path.join(model_entry['file_path'], rec_file),
+                        det_model_path=os.path.join(dir_path, det_file),
+                        rec_model_path=os.path.join(dir_path, rec_file),
                         use_gpu=use_gpu & torch.cuda.is_available()
                     )
 
@@ -211,6 +214,9 @@ def detect(
         velocities: dict[float, float] | None = None
 
         for group in detectors:  # 'group' is group id
+            if group not in results:
+                continue
+
             detector = detectors[group]
             model = model_entries[group]
             dargs = dets_args[group]
