@@ -273,7 +273,10 @@ class MainWindow(QWidget):
                 self.__curr_task_entry['url'] = video_url
 
                 if not os.path.exists(video_url):
-                    if not download_file(download_url, video_url):
+                    if download_file(download_url, video_url):
+                        logging.info(f'Video {download_url} successfully downloaded to {video_url}')
+                    else:
+                        logging.warning(f'Failed to download video {download_url}')
                         continue
 
             self.__task_detail.set_task(self.__curr_task_entry)

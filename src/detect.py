@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 import cv2
 import numpy as np
-import torch.cuda
+import torch
 from PyQt6.QtCore import pyqtSignal
 from ultralytics import YOLO
 
@@ -60,9 +60,13 @@ def detect(
             if 'yolo' in model_entry['file_path']:
                 model_path = model_paths[0]
                 model_url = f'{weight_dir}/{os.path.basename(model_path)}'
+                url_prefix = SYSCON_DAO.get_url_prefix()
 
                 if not os.path.exists(model_url):
-                    if not download_file(url_prefix + model_path, model_url):
+                    if download_file(url_prefix + model_path, model_url):
+                        logging.info(f'Model {model_path} successfully downloaded to {model_url}')
+                    else:
+                        logging.warning(f'Failed to download model {model_path}')
                         update_task_status(task_entry['id'], -1)
                         cap_in.release()
                         return
@@ -81,7 +85,10 @@ def detect(
                     if os.path.exists(model_url):
                         continue
 
-                    if not download_file(url_prefix + model_path, model_url):
+                    if download_file(url_prefix + model_path, model_url):
+                        logging.info(f'Model {model_path} successfully downloaded to {model_url}')
+                    else:
+                        logging.warning(f'Failed to download model {model_path}')
                         update_task_status(task_entry['id'], -1)
                         cap_in.release()
                         return
@@ -151,6 +158,8 @@ def detect(
             cap_in.release()
             return
 
+        logging.info(f'Detector (group id {group_id}) successfully inited')
+
     width = int(cap_in.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap_in.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
@@ -161,15 +170,18 @@ def detect(
         now = datetime.now()
         timer = timedelta(hours=now.hour, minutes=now.minute, seconds=now.second)
 
-    else:
-        if task_entry['analysis_start_time']:
-            cap_in.set(cv2.CAP_PROP_POS_MSEC, task_entry['analysis_start_time'].total_seconds() * 1e3)
-            timer = timedelta(seconds=task_entry['analysis_start_time'].total_seconds())
+    elif task_entry['analysis_start_time']:
+        cap_in.set(cv2.CAP_PROP_POS_MSEC, task_entry['analysis_start_time'].total_seconds() * 1e3)
+        timer = timedelta(seconds=task_entry['analysis_start_time'].total_seconds())
+
+    logging.info(f'Detection of {task_entry['url']} begins')
 
     while cap_in.isOpened() and not (is_closed and is_closed()):
         st0 = time()
 
         ret, frame = cap_in.read()
+        logging.info('Frame obtained')
+
         if not ret:
             end_as_designed = True
             break
@@ -187,6 +199,8 @@ def detect(
         for values in det_models.values():
             det_model = values['model']
 
+            logging.info('Inference begins')
+
             if isinstance(det_model, YOLO):
                 result = det_model.track(
                     source=frame,
@@ -202,12 +216,14 @@ def detect(
                 result = det_model.ocr(frame)
             else:
                 result = None
-                logging.error('result is None')
+                logging.error('Result is None')
+
+            logging.info('Inference ends')
 
             for group in values['groups']:
                 results[group] = result
 
-        print(f'Model cost: {time() - st1:.3f} s')
+        logging.info(f'Model cost: {time() - st1:.3f} s')
 
         stats_line = 1
         subscript_line = 1
@@ -276,11 +292,11 @@ def detect(
 
         total_cost = time() - st0
 
-        print(f'Total cost: {total_cost:.3f} s')
-        print('---------------------')
+        logging.info(f'Total cost: {total_cost:.3f} s')
+        logging.info('---------------------')
 
         sleep(max(1 / fps - total_cost, 0))
 
     cap_in.release()
-    # TODO
+
     update_task_status(task_entry['id'], 1 if end_as_designed else -1)

@@ -7,6 +7,6 @@ weight_dir: weights
 video_dir: videos
 cache_minutes: 60
 online: false
-use_gpu: true
-output_to_sql: true
-output_to_obs: true
+use_gpu: false
+output_to_sql: false
+output_to_obs: false

@@ -21,7 +21,7 @@ class MajorDisplayWidget(QWidget):
         self.__background.setPixmap(QPixmap(settings['background_image']))
         self.__background.setScaledContents(True)
 
-        self.__display_label = ImageLabel(parent=self)  # TODO
+        self.__display_label = ImageLabel(parent=self)
         self.__display_label.setGeometry(0, 0, 960, 655)
 
         loading_group = QWidget()
