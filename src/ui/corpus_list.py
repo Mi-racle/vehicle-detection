@@ -221,7 +221,7 @@ class CorpusListWidget(QWidget):
         self.__title_line_label.setScaledContents(True)
         # title_group END
 
-        self.__scroll_container = ScrollContainer(maxlen=1000)
+        self.__scroll_container = ScrollContainer(maxlen=settings['scroll_maxlen'], reverse=True)
         self.__scroll_container.setFixedSize(0, 0)
 
         self.__scroll_area = ScrollAreaWithShift(self)

@@ -4,8 +4,9 @@ import sys
 from datetime import datetime
 
 import yaml
-from PyQt6.QtGui import QGuiApplication
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QGuiApplication, QPixmap
+from PyQt6.QtWidgets import QApplication, QSplashScreen
 
 from ui.main_window import MainWindow
 from utils import filter_kwargs
@@ -43,7 +44,13 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    window = MainWindow(**kwargs)
+    splash_screen = QSplashScreen(QPixmap('traffic.png'))
+    splash_screen.show()
+
+    splash_screen.showMessage('启动中...', Qt.AlignmentFlag.AlignBottom)  # TODO
+
+    window = MainWindow(splash_screen.showMessage, **kwargs)
+    splash_screen.finish(window)
     window.show()
 
     if sys_config.get('auto_size'):

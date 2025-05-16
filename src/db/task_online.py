@@ -77,7 +77,7 @@ class TblTaskOnlineDAO:
                 end_datetime = execute_date + fetch['end_time']
 
                 if start_datetime <= datetime.now() < end_datetime:
-                    task_info = self.__TASK_INFO_DAO.get_task_info_by_id(fetch['id'])
+                    task_info = self.__TASK_INFO_DAO.get_task_info_by_id(fetch['task_id'])
                     fetch['task_name'] = task_info['task_name'] if task_info else ''
                     fetch['group_id'] = json.loads(fetch['group_id'])
                     fetch['create_time'] = start_datetime

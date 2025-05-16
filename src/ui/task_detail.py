@@ -161,7 +161,8 @@ class TaskDetailWidget(QWidget):
         self.__scroll_container.setFixedSize(0, 0)
 
         self.__scroll_area = QScrollArea(detection_group)
-        self.__scroll_area.setGeometry(118, 11, 182 + 24, 48)  # 24 = 14+8+1*2 = gap + bar_width + bar_border * 2
+        # self.__scroll_area.setGeometry(118, 11, 182 + 24, 48)  # 24 = 14+8+1*2 = gap + bar_width + bar_border * 2
+        self.__scroll_area.setGeometry(18, 11, 332 + 24, 48)
         self.__scroll_area.setWidget(self.__scroll_container)
         self.__scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
         self.__scroll_area.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -302,7 +303,7 @@ class TaskDetailWidget(QWidget):
 
     def add_detection(self, detection: str):
         scroll_item = QLabel(detection)
-        scroll_item.setFixedSize(182, 24)
+        scroll_item.setFixedSize(332, 24)
         scroll_item.setAlignment(Qt.AlignmentFlag.AlignCenter)
         scroll_item.setFont(self.__scroll_item_font)
         scroll_item.setStyleSheet(self.__scroll_item_ss)

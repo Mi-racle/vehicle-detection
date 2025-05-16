@@ -71,6 +71,7 @@ corpus_list:
   title_tag_label_ss: 'font-weight: bold; font-size: 20px; color: #333333; line-height: 30px; text-align: left; font-style: normal;'
   title_line: 'ui/assets/offline/titline2.png'
   scroll_bar_ss: 'QScrollBar:vertical { background: transparent; width: 10px; margin: 0px 0px 0px 0px;} QScrollBar::handle:vertical { background: #DECEBD; border-radius: 5px; border: 1px solid #D5B793;} QScrollBar:horizontal { background: transparent; height: 10px; margin: 0px 0px 0px 0px;} QScrollBar::handle:horizontal { background: #DECEBD; border-radius: 5px; border: 1px solid #D5B793;}'
+  scroll_maxlen: 200
   scroll_item:
     font_siyuan_cn_heavy: 'ui/assets/offline/SourceHanSansCN-Heavy.ttf'
     font_siyuan_cn_medium: 'ui/assets/offline/SourceHanSansCN-Medium.ttf'

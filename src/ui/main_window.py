@@ -37,6 +37,7 @@ class MainWindow(QWidget):
 
     def __init__(
             self,
+            pro,
             width=1920,
             height=1102,
             output_dir='runs',
@@ -216,10 +217,13 @@ class MainWindow(QWidget):
         self.__add_tasks_thread and self.__add_tasks_thread.wait()
         self.__run_tasks_thread and self.__run_tasks_thread.wait()
         self.__upload_corpora_thread and self.__upload_corpora_thread.wait()
+        self.__collect_garbage_thread and self.__collect_garbage_thread.wait()
 
         sys.exit(0)
 
     def __add_tasks(self):
+        logging.info('Thread add_tasks started')
+
         while not self.__closed:
             if self.__online:
                 task_entries = TASK_ONLINE_DAO.get_next_online_tasks()
@@ -249,8 +253,12 @@ class MainWindow(QWidget):
 
             sleep(1)
 
+        logging.info('Thread add_tasks ended')
+
     def __run_tasks(self):
         from detect import detect
+
+        logging.info('Thread run_tasks started')
 
         while not self.__closed:
             if len(self.__task_queue) == 0:
@@ -273,10 +281,15 @@ class MainWindow(QWidget):
                 self.__curr_task_entry['url'] = video_url
 
                 if not os.path.exists(video_url):
-                    if download_file(download_url, video_url):
-                        logging.info(f'Video {download_url} successfully downloaded to {video_url}')
-                    else:
-                        logging.warning(f'Failed to download video {download_url}')
+                    try:
+                        if download_file(download_url, video_url):
+                            logging.info(f'Video {download_url} successfully downloaded to {video_url}')
+                        else:
+                            logging.warning(f'Failed to download video {download_url}')
+                            continue
+
+                    except Exception as e:
+                        logging.error(e)
                         continue
 
             self.__task_detail.set_task(self.__curr_task_entry)
@@ -300,7 +313,11 @@ class MainWindow(QWidget):
             self.__task_detail.set_task(None)
             self.__reset_display_signal.emit()
 
+        logging.info('Thread run_tasks ended')
+
     def __upload_corpora(self):
+        logging.info('Thread upload_corpora started')
+
         while not self.__closed:
             if len(self.__corpus_queue) == 0:
                 sleep(1)
@@ -312,12 +329,20 @@ class MainWindow(QWidget):
             self.__output_to_sql and RESULT_DAO.insert_result(corpus)  # Update sql
             self.__output_to_obs and OBS_DAO.upload_file(f'{self.__output_dir}/{corpus['dest']}')  # Update obs
 
+        logging.info('Thread upload_corpora ended')
+
     def __collect_garbage(self):
+        logging.info('Thread collect_garbage started')
+
         while not self.__closed:
             if not os.path.exists(self.__output_dir):
+                sleep(1)
                 continue
 
             for filename in os.listdir(self.__output_dir):
+                if self.__closed:
+                    break
+
                 file_path = f'{self.__output_dir}/{filename}'
 
                 if not os.path.isfile(file_path):
@@ -335,7 +360,9 @@ class MainWindow(QWidget):
                     except Exception as e:
                         logging.error(e)
 
-            sleep(60)
+            sleep(1)
+
+        logging.info('Thread collect_garbage ended')
 
     def __is_closed(self):
         return self.__closed
