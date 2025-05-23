@@ -11,9 +11,11 @@ class TitleBarWidget(QWidget):
     def __init__(self, settings: dict, title='Python', parent: Optional[QWidget] = None):
         super().__init__(parent)
 
-        font_alimama_fangyuan_semibold = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_alimama_fangyuan_semibold']))[0])
+        font_families = QFontDatabase.families()
+        font_alimama_fangyuan_semibold = (
+            QFont('阿里妈妈方圆体 Square SemiBold')) if '阿里妈妈方圆体 Square SemiBold' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_alimama_fangyuan_semibold']))[0])
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.setStyleSheet(settings['title_bar_ss'])

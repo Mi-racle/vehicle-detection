@@ -6,6 +6,7 @@ from PyQt6.QtGui import QFont, QFontDatabase, QPixmap, QResizeEvent
 from PyQt6.QtWidgets import QWidget, QLabel
 
 from ui.ui_utils import ScrollContainer, ScrollAreaWithShift
+from utils import LimitedDict
 
 
 class CorpusListWidget(QWidget):
@@ -26,15 +27,19 @@ class CorpusListWidget(QWidget):
         ):
             super().__init__(parent)
 
-            self.__font_siyuan_cn_heavy = QFont(
-                QFontDatabase.applicationFontFamilies(
-                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_heavy']))[0])
-            self.__font_siyuan_cn_medium = QFont(
-                QFontDatabase.applicationFontFamilies(
-                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_medium']))[0])
-            self.__font_siyuan_cn_regular = QFont(
-                QFontDatabase.applicationFontFamilies(
-                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
+            font_families = QFontDatabase.families()
+            self.__font_siyuan_cn_heavy = (
+                QFont('Source Han Sans CN Heavy')) if 'Source Han Sans CN Heavy' in font_families else QFont(
+                    QFontDatabase.applicationFontFamilies(
+                        QFontDatabase.addApplicationFont(settings['font_siyuan_cn_heavy']))[0])
+            self.__font_siyuan_cn_medium = (
+                QFont('Source Han Sans CN Medium')) if 'Source Han Sans CN Medium' in font_families else QFont(
+                    QFontDatabase.applicationFontFamilies(
+                        QFontDatabase.addApplicationFont(settings['font_siyuan_cn_medium']))[0])
+            self.__font_siyuan_cn_regular = (
+                QFont('Source Han Sans CN')) if 'Source Han Sans CN' in font_families else QFont(
+                    QFontDatabase.applicationFontFamilies(
+                        QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
 
             self.setFixedSize(896, 84)
             self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
@@ -193,9 +198,15 @@ class CorpusListWidget(QWidget):
     def __init__(self, settings: dict, parent: Optional[QWidget] = None):
         super().__init__(parent)
 
-        font_siyuan_cn_bold = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_siyuan_cn_bold']))[0])
+        font_families = QFontDatabase.families()
+        font_siyuan_cn_bold = (
+            QFont('Source Han Sans CN Bold')) if 'Source Han Sans CN Bold' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_bold']))[0])
+        font_siyuan_cn_regular = (
+            QFont('Source Han Sans CN')) if 'Source Han Sans CN' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
 
         self.__background = QLabel(self)
         self.__background.setGeometry(0, 0, 960, 349)
@@ -221,6 +232,12 @@ class CorpusListWidget(QWidget):
         self.__title_line_label.setScaledContents(True)
         # title_group END
 
+        self.__tip_tag_label = QLabel('暂无语料文件', self)
+        self.__tip_tag_label.setGeometry(32, 190, 896, 18)
+        self.__tip_tag_label.setFont(font_siyuan_cn_regular)
+        self.__tip_tag_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.__tip_tag_label.setStyleSheet(settings['tip_tag_label_ss'])
+
         self.__scroll_container = ScrollContainer(maxlen=settings['scroll_maxlen'], reverse=True)
         self.__scroll_container.setFixedSize(0, 0)
 
@@ -239,7 +256,7 @@ class CorpusListWidget(QWidget):
         ''')
 
         self.__settings = settings
-        self.__corpus_entries: dict[str, dict] = {}  # { corpus_name: corpus }
+        self.__corpus_entries = LimitedDict(maxlen=settings['scroll_maxlen'])
         self.__selected_item: CorpusListWidget.ScrollItemWidget | None = None
 
         # self.__scroll_test(5)
@@ -255,6 +272,7 @@ class CorpusListWidget(QWidget):
 
         self.__background.resize(new_size)
         self.__title_line_label.setFixedWidth(self.__title_line_label.width() - width_diff)
+        self.__tip_tag_label.setFixedWidth(self.__tip_tag_label.width() - width_diff)
         self.__scroll_area.setFixedWidth(self.__scroll_area.width() - width_diff)
 
         super().resizeEvent(event)
@@ -272,6 +290,7 @@ class CorpusListWidget(QWidget):
         item.setFixedSize(896, 84)
         self.__scroll_container.addItem(item)
         self.__corpus_entries[corpus_entry['dest']] = corpus_entry
+        self.__tip_tag_label.setVisible(False)
 
     def __send_corpus(self, corpus_entry: dict | None = None):
         """

@@ -1712,7 +1712,7 @@ class PlateDetector(Detector):
 
                 key = next((k for k, v in self.__ret.items() if v == plate), None)
 
-                if key and orig_img is not None:
+                if key is not None and orig_img is not None:
                     frame_copy = orig_img.copy()
 
                     bbox = bboxes[key]
@@ -1868,7 +1868,7 @@ class ObjectDetector(Detector):
         self.__id_buffer = deque(maxlen=200)
         self.__cls_indices = cls_indices
         self.__fps = fps
-        self.__result_buffer = []
+        self.__result_buffer: Results | None = None
         self.__ret: dict[float, np.ndarray] = {}
 
     def update(
@@ -1876,7 +1876,7 @@ class ObjectDetector(Detector):
             result: Results
     ):
         self.__ret = {}
-        self.__result_buffer.append(result)
+        self.__result_buffer = result
 
         if result.boxes.id is None:
             return
@@ -1902,7 +1902,7 @@ class ObjectDetector(Detector):
             stats_line: int | None = 1,
             subscript_line: int | None = 1
     ) -> cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray:
-        result = deepcopy(self.__result_buffer[-1])
+        result = deepcopy(self.__result_buffer)
 
         if frame is not None:
             result.orig_img = frame
@@ -1923,7 +1923,7 @@ class ObjectDetector(Detector):
 
     def output_corpus(self, output_dir: str, orig_img=None) -> list[dict[str, str | None]]:
         corpus_infos = []
-        result = self.__result_buffer[-1]
+        result = self.__result_buffer
 
         for idx in self.__ret:
             self.__id_buffer.append(idx)

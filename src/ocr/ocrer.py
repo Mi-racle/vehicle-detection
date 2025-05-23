@@ -80,7 +80,8 @@ class OCRer:
 
     def ocr(
             self,
-            img: str | cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray
+            img: str | cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray,
+            imgsz: tuple = None  # (height, width)
     ):
         if isinstance(img, str):
             img = cv2.imread(img)
@@ -89,7 +90,23 @@ class OCRer:
                 return [], []
 
         ori_im = img.copy()
-        dt_boxes, elapse = self.text_detector(img)
+        ori_sz = (img.shape[0], img.shape[1])  # (height, width)
+
+        if imgsz is None:
+            rsz_im = img.copy()
+
+        else:
+            rsz_im = cv2.resize(img, (imgsz[1], imgsz[0]))
+
+        dt_boxes, elapse = self.text_detector(rsz_im)  # dt_boxes: ndarray = [[tl, tr, bt, bl], ...] [width, height]
+
+        try:
+            if imgsz is not None and dt_boxes.ndim == 3:
+                dt_boxes[:, :, 0] *= ori_sz[1] / imgsz[1]
+                dt_boxes[:, :, 1] *= ori_sz[0] / imgsz[0]
+
+        except Exception as e:
+            print(e)
 
         if self.show_log:
             print(f'dt_boxes num: {len(dt_boxes)}, elapse: {elapse}')

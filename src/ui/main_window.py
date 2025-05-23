@@ -10,7 +10,7 @@ from typing import Any
 import cv2
 import numpy as np
 import yaml
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint, QDeadlineTimer
 from PyQt6.QtGui import QIcon, QResizeEvent, QGuiApplication, QCloseEvent, QMoveEvent
 from PyQt6.QtWidgets import QWidget, QDialog
 
@@ -37,15 +37,16 @@ class MainWindow(QWidget):
 
     def __init__(
             self,
-            pro,
             width=1920,
             height=1102,
             output_dir='runs',
             weight_dir='weights',
             video_dir='videos',
             cache_minutes=60,
-            online=True,
+            det_width=480,
+            online=False,
             use_gpu=False,
+            warmup=True,
             output_to_sql=False,
             output_to_obs=False
     ):
@@ -98,15 +99,17 @@ class MainWindow(QWidget):
         self.__weight_dir = weight_dir
         self.__video_dir = video_dir
         self.__cache_minutes = cache_minutes
+        self.__det_width = det_width
         self.__online = online
         self.__use_gpu = use_gpu
+        self.__warmup = warmup
         self.__output_to_sql = output_to_sql
         self.__output_to_obs = output_to_obs
         self.__curr_task_entry: dict | None = None
         self.__curr_task_lock = threading.Lock()
         self.__task_queue = deque(maxlen=100)
         self.__task_queue_lock = threading.Lock()
-        self.__corpus_queue = deque(maxlen=1000)
+        self.__corpus_queue = deque(maxlen=200)
         self.__corpus_queue_lock = threading.Lock()
         self.__add_tasks_thread: QThread | None = None
         self.__run_tasks_thread: QThread | None = None
@@ -214,10 +217,10 @@ class MainWindow(QWidget):
     def __safe_close(self):
         self.__closed = True
 
-        self.__add_tasks_thread and self.__add_tasks_thread.wait()
-        self.__run_tasks_thread and self.__run_tasks_thread.wait()
-        self.__upload_corpora_thread and self.__upload_corpora_thread.wait()
-        self.__collect_garbage_thread and self.__collect_garbage_thread.wait()
+        self.__add_tasks_thread and self.__add_tasks_thread.wait(QDeadlineTimer(3 * 1000))
+        self.__run_tasks_thread and self.__run_tasks_thread.wait(QDeadlineTimer(3 * 1000))
+        self.__upload_corpora_thread and self.__upload_corpora_thread.wait(QDeadlineTimer(3 * 1000))
+        self.__collect_garbage_thread and self.__collect_garbage_thread.wait(QDeadlineTimer(3 * 1000))
 
         sys.exit(0)
 
@@ -298,8 +301,10 @@ class MainWindow(QWidget):
                 self.__curr_task_entry,
                 self.__output_dir,
                 self.__weight_dir,
+                self.__det_width,
                 self.__online,
                 self.__use_gpu,
+                self.__warmup,
                 self.__is_closed,
                 self.__append_corpus_signal,
                 self.__set_display

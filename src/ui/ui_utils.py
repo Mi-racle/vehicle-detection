@@ -1,9 +1,11 @@
+import logging
+from time import sleep
 from typing import Optional
 
 import cv2
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap, QImage, QWheelEvent
-from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QScrollArea
+from PyQt6.QtCore import Qt, QTimer, QThread, QDeadlineTimer
+from PyQt6.QtGui import QPixmap, QImage, QWheelEvent, QFont
+from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QScrollArea, QSplashScreen
 
 
 class ImageLabel(QLabel):
@@ -84,7 +86,7 @@ class ScrollContainer(QWidget):
                 self.__updateSize()
 
             except IndexError as ie:
-                print(ie)
+                logging.error(ie)
 
     def removeAll(self):
         while self.__items:
@@ -96,6 +98,9 @@ class ScrollContainer(QWidget):
                 return item
 
         return None
+
+    def getItemNum(self):
+        return len(self.__items)
 
     def __updateSize(self):
         width = self.__items and self.__items[0].width() or 0
@@ -111,3 +116,41 @@ class ScrollAreaWithShift(QScrollArea):
             event.accept()
         else:
             super().wheelEvent(event)
+
+
+class AnimatedScreen(QSplashScreen):
+    def __init__(self, pixmap: QPixmap, message_base='', interval_s=0.222, color=Qt.GlobalColor.white):
+        super().__init__(pixmap)
+
+        font = self.font()
+        font.setPointSize(12)
+        self.setFont(font)
+
+        self.__message_base = message_base
+        self.__interval_s = interval_s
+        self.__color = color
+        self.__dot_count = 0
+        self.__finished = False
+        self.__animation_thread: QThread | None = None
+
+    def show(self):
+        super().show()
+
+        self.__animation_thread = QThread()
+        self.__animation_thread.run = lambda: self.__update_message()
+        self.__animation_thread.start()
+
+    def finish(self, w):
+        self.__finished = True
+
+        self.__animation_thread and self.__animation_thread.wait(QDeadlineTimer(3 * 1000))
+
+        super().finish(w)
+
+    def __update_message(self):
+        while not self.__finished:
+            dots = '.' * ((self.__dot_count % 3) + 1)
+            self.showMessage(f'{self.__message_base}{dots}', Qt.AlignmentFlag.AlignBottom, self.__color)
+            self.__dot_count += 1
+
+            sleep(self.__interval_s)

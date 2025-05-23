@@ -4,11 +4,10 @@ import sys
 from datetime import datetime
 
 import yaml
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QGuiApplication, QPixmap
-from PyQt6.QtWidgets import QApplication, QSplashScreen
+from PyQt6.QtWidgets import QApplication
 
-from ui.main_window import MainWindow
+from ui.ui_utils import AnimatedScreen
 from utils import filter_kwargs
 
 
@@ -36,24 +35,25 @@ def init_log(dir_name: str):
 
 if __name__ == '__main__':
     sys_config: dict = yaml.safe_load(open('configs/sys_config.yaml', 'r'))
+    screen_settings: dict = yaml.safe_load(
+        open(f'ui/assets/{'on' if sys_config['online'] else 'off'}line/settings.yaml', 'r'))['splash_screen']
 
     init_log(sys_config['log_dir'])
-
-    kwargs = filter_kwargs(MainWindow.__init__, sys_config)
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    splash_screen = QSplashScreen(QPixmap('traffic.png'))
+    splash_screen = AnimatedScreen(QPixmap(screen_settings.get('screen_image')), '正在启动')
     splash_screen.show()
 
-    splash_screen.showMessage('启动中...', Qt.AlignmentFlag.AlignBottom)  # TODO
-
-    window = MainWindow(splash_screen.showMessage, **kwargs)
-    splash_screen.finish(window)
+    from ui.main_window import MainWindow
+    kwargs = filter_kwargs(MainWindow.__init__, sys_config)
+    window = MainWindow(**kwargs)
     window.show()
 
-    if sys_config.get('auto_size'):
+    splash_screen.finish(window)
+
+    if sys_config.get('auto_size'):  # no 'auto_size' or auto_size == False
         window.resize(QGuiApplication.primaryScreen().availableGeometry().size())
 
     window.func()

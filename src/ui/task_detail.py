@@ -17,15 +17,19 @@ class TaskDetailWidget(QWidget):
     def __init__(self, settings: dict, parent: Optional[QWidget] = None):
         super().__init__(parent)
 
-        font_siyuan_cn_bold = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_siyuan_cn_bold']))[0])
-        font_siyuan_cn_medium = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_siyuan_cn_medium']))[0])
-        font_siyuan_cn_regular = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
+        font_families = QFontDatabase.families()
+        font_siyuan_cn_bold = (
+            QFont('Source Han Sans CN Bold')) if 'Source Han Sans CN Bold' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_bold']))[0])
+        font_siyuan_cn_medium = (
+            QFont('Source Han Sans CN Medium')) if 'Source Han Sans CN Medium' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_medium']))[0])
+        font_siyuan_cn_regular = (
+            QFont('Source Han Sans CN')) if 'Source Han Sans CN' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
 
         self.__background = QLabel(self)
         self.__background.setGeometry(0, 0, 450, 655)
@@ -161,8 +165,7 @@ class TaskDetailWidget(QWidget):
         self.__scroll_container.setFixedSize(0, 0)
 
         self.__scroll_area = QScrollArea(detection_group)
-        # self.__scroll_area.setGeometry(118, 11, 182 + 24, 48)  # 24 = 14+8+1*2 = gap + bar_width + bar_border * 2
-        self.__scroll_area.setGeometry(18, 11, 332 + 24, 48)
+        self.__scroll_area.setGeometry(18, 11, 332 + 24, 48)  # 24 = 14+8+1*2 = gap + bar_width + bar_border * 2
         self.__scroll_area.setWidget(self.__scroll_container)
         self.__scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
         self.__scroll_area.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)

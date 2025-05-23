@@ -15,15 +15,19 @@ class CorpusDetailWidget(QWidget):
     def __init__(self, settings: dict, corpus_dir='', parent: Optional[QWidget] = None):
         super().__init__(parent)
 
-        font_siyuan_cn_heavy = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_siyuan_cn_heavy']))[0])
-        font_siyuan_cn_bold = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_siyuan_cn_bold']))[0])
-        font_siyuan_cn_regular = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
+        font_families = QFontDatabase.families()
+        font_siyuan_cn_heavy = (
+            QFont('Source Han Sans CN Heavy')) if 'Source Han Sans CN Heavy' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_heavy']))[0])
+        font_siyuan_cn_bold = (
+            QFont('Source Han Sans CN Bold')) if 'Source Han Sans CN Bold' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_bold']))[0])
+        font_siyuan_cn_regular = (
+            QFont('Source Han Sans CN')) if 'Source Han Sans CN' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
 
         self.__background = QLabel(self)
         self.__background.setGeometry(0, 0, 450, 1014)

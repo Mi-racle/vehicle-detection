@@ -1,3 +1,6 @@
+splash_screen:
+  screen_image: 'ui/assets/offline/screen.png'
+
 main_window:
   window_icon: 'ui/assets/offline/AI-9.png'
   background_image: 'ui/assets/offline/bg.png'
@@ -44,10 +47,12 @@ task_detail:
 
 task_list:
   font_siyuan_cn_bold: 'ui/assets/offline/SourceHanSansCN-Bold.ttf'
+  font_siyuan_cn_regular: 'ui/assets/offline/SourceHanSansCN-Regular.ttf'
   background_image: 'ui/assets/offline/box2.png'
   title_icon: 'ui/assets/offline/ico-tit-daizhixing.png'
   title_tag_label_ss: 'font-weight: bold; font-size: 20px; color: #333333; line-height: 30px; text-align: left; font-style: normal;'
   title_line: 'ui/assets/offline/titline.png'
+  tip_tag_label_ss: 'font-weight: 400; font-size: 18px; color: #333333; line-height: 27px; text-align: center; font-style: normal;'
   scroll_bar_ss: 'QScrollBar:vertical { background: transparent; width: 10px; margin: 0px 0px 0px 0px;} QScrollBar::handle:vertical { background: #DECEBD; border-radius: 5px; border: 1px solid #D5B793;}'
   scroll_item:
     font_siyuan_cn_medium: 'ui/assets/offline/SourceHanSansCN-Medium.ttf'
@@ -66,10 +71,12 @@ major_display:
 
 corpus_list:
   font_siyuan_cn_bold: 'ui/assets/offline/SourceHanSansCN-Bold.ttf'
+  font_siyuan_cn_regular: 'ui/assets/offline/SourceHanSansCN-Regular.ttf'
   background_image: 'ui/assets/offline/box3.png'
   title_icon: 'ui/assets/offline/ico-tit-yiscyuliao.png'
   title_tag_label_ss: 'font-weight: bold; font-size: 20px; color: #333333; line-height: 30px; text-align: left; font-style: normal;'
   title_line: 'ui/assets/offline/titline2.png'
+  tip_tag_label_ss: 'font-weight: 400; font-size: 18px; color: #333333; line-height: 27px; text-align: center; font-style: normal;'
   scroll_bar_ss: 'QScrollBar:vertical { background: transparent; width: 10px; margin: 0px 0px 0px 0px;} QScrollBar::handle:vertical { background: #DECEBD; border-radius: 5px; border: 1px solid #D5B793;} QScrollBar:horizontal { background: transparent; height: 10px; margin: 0px 0px 0px 0px;} QScrollBar::handle:horizontal { background: #DECEBD; border-radius: 5px; border: 1px solid #D5B793;}'
   scroll_maxlen: 200
   scroll_item:

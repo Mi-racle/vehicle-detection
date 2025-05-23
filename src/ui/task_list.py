@@ -13,12 +13,15 @@ class TaskListWidget(QWidget):
         def __init__(self, settings: dict, task_name='-', start_time='-', parent: Optional[QWidget] = None):
             super().__init__(parent)
 
-            font_siyuan_cn_medium = QFont(
-                QFontDatabase.applicationFontFamilies(
-                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_medium']))[0])
-            font_siyuan_cn_regular = QFont(
-                QFontDatabase.applicationFontFamilies(
-                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
+            font_families = QFontDatabase.families()
+            font_siyuan_cn_medium = (
+                QFont('Source Han Sans CN Medium')) if 'Source Han Sans CN Medium' in font_families else QFont(
+                    QFontDatabase.applicationFontFamilies(
+                        QFontDatabase.addApplicationFont(settings['font_siyuan_cn_medium']))[0])
+            font_siyuan_cn_regular = (
+                QFont('Source Han Sans CN')) if 'Source Han Sans CN' in font_families else QFont(
+                    QFontDatabase.applicationFontFamilies(
+                        QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
 
             self.setFixedSize(386, 84)
             self.setObjectName(task_name)
@@ -61,9 +64,15 @@ class TaskListWidget(QWidget):
     def __init__(self, settings: dict, parent: Optional[QWidget] = None):
         super().__init__(parent)
 
-        font_siyuan_cn_bold = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_siyuan_cn_bold']))[0])
+        font_families = QFontDatabase.families()
+        font_siyuan_cn_bold = (
+            QFont('Source Han Sans CN Bold')) if 'Source Han Sans CN Bold' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_bold']))[0])
+        font_siyuan_cn_regular = (
+            QFont('Source Han Sans CN')) if 'Source Han Sans CN' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
 
         self.__background = QLabel(self)
         self.__background.setGeometry(0, 0, 450, 349)
@@ -88,6 +97,12 @@ class TaskListWidget(QWidget):
         self.__title_line_label.setPixmap(QPixmap(settings['title_line']))
         # title_group END
 
+        self.__tip_tag_label = QLabel('暂无等待任务', self)
+        self.__tip_tag_label.setGeometry(32, 190, 386, 18)
+        self.__tip_tag_label.setFont(font_siyuan_cn_regular)
+        self.__tip_tag_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.__tip_tag_label.setStyleSheet(settings['tip_tag_label_ss'])
+
         self.__scroll_container = ScrollContainer()
         self.__scroll_container.setFixedSize(0, 0)
 
@@ -111,9 +126,12 @@ class TaskListWidget(QWidget):
         item = TaskListWidget.ScrollItemWidget(self.__settings['scroll_item'], task_name, start_time)
         item.setFixedSize(386, 84)
         self.__scroll_container.addItem(item)
+        self.__tip_tag_label.setVisible(False)
 
     def remove_task(self, index: int):
         self.__scroll_container.removeItem(index)
+        if self.__scroll_container.getItemNum() == 0:
+            self.__tip_tag_label.setVisible(True)
 
     def __scroll_test(self, item_num: int):
         for i in range(item_num):

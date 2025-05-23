@@ -60,15 +60,17 @@ class ExitDialog(QDialog):
     def __init__(self, settings: dict, parent: Optional[QWidget] = None):
         super().__init__(parent)
 
+        font_families = QFontDatabase.families()
         font_pingfang_sc_boldface = QFont(
             QFontDatabase.applicationFontFamilies(
                 QFontDatabase.addApplicationFont(settings['font_pingfang_sc_boldface']))[0])
         font_pingfang_sc_regular = QFont(
             QFontDatabase.applicationFontFamilies(
                 QFontDatabase.addApplicationFont(settings['font_pingfang_sc_regular']))[0])
-        font_siyuan_cn_regular = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
+        font_siyuan_cn_regular = (
+            QFont('Source Han Sans CN')) if 'Source Han Sans CN' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
 
         self.setFixedSize(490, 369)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)

@@ -12,9 +12,11 @@ class MajorDisplayWidget(QWidget):
     def __init__(self, settings: dict, parent: Optional[QWidget] = None):
         super().__init__(parent)
 
-        font_siyuan_cn_regular = QFont(
-            QFontDatabase.applicationFontFamilies(
-                QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
+        font_families = QFontDatabase.families()
+        font_siyuan_cn_regular = (
+            QFont('Source Han Sans CN')) if 'Source Han Sans CN' in font_families else QFont(
+                QFontDatabase.applicationFontFamilies(
+                    QFontDatabase.addApplicationFont(settings['font_siyuan_cn_regular']))[0])
 
         self.__background = QLabel(self)
         self.__background.setGeometry(0, 0, 960, 655)
@@ -32,7 +34,7 @@ class MajorDisplayWidget(QWidget):
         self.__loading_icon_label.setGeometry(0, 0, 40, 40)
         self.__loading_icon_label.setPixmap(QPixmap(settings['loading_icon']))
 
-        self.__loading_tag_label = QLabel('加载中', loading_group)
+        self.__loading_tag_label = QLabel('等待任务中', loading_group)
         self.__loading_tag_label.setGeometry(48, 11, 132, 18)
         self.__loading_tag_label.setFont(font_siyuan_cn_regular)
         self.__loading_tag_label.setStyleSheet(settings['loading_tag_label_ss'])

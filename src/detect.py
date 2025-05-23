@@ -22,8 +22,10 @@ def detect(
         task_entry: dict,
         output_dir='runs',
         weight_dir='weights',
+        det_width=480,
         online=False,
         use_gpu=False,
+        warmup=True,
         is_closed: Callable[[], bool] | None = None,
         append_corpus_signal: pyqtSignal | None = None,
         set_umat: Callable[[cv2.Mat | np.ndarray[Any, np.dtype] | np.ndarray], None] | None = None,
@@ -174,11 +176,23 @@ def detect(
         cap_in.set(cv2.CAP_PROP_POS_MSEC, task_entry['analysis_start_time'].total_seconds() * 1e3)
         timer = timedelta(seconds=task_entry['analysis_start_time'].total_seconds())
 
-    logging.info(f'Detection of {task_entry['url']} begins')
+    logging.info(f'Detection of {task_entry['url']} started')
 
-    while cap_in.isOpened() and not (is_closed and is_closed()):
+    last_results = {}
+    accrued_deviation = 0
+
+    while True:
+        if not cap_in.isOpened():
+            logging.info('Cap is closed')
+            break
+
+        if is_closed and is_closed():
+            logging.info('Process is closed')
+            break
+
         st0 = time()
 
+        logging.info('Try to read frame')
         ret, frame = cap_in.read()
         logging.info('Frame obtained')
 
@@ -191,39 +205,58 @@ def detect(
         plotted_frame = frame.copy()
 
         if not in_analysis(timer, task_entry['analysis_start_time'], task_entry['analysis_end_time']):
+            logging.info('Video not in analysis')
             end_as_designed = True
             break
 
         results = {}  # {group_id: result}
 
-        for values in det_models.values():
-            det_model = values['model']
+        if online and accrued_deviation >= 1 / fps:
+            accrued_deviation -= 1 / fps
+            results = last_results
 
-            logging.info('Inference begins')
+            logging.info(f'Frame at {timer} skipped inference')
 
-            if isinstance(det_model, YOLO):
-                result = det_model.track(
-                    source=frame,
-                    imgsz=(min(640 * height // width, height), min(640, width)),
-                    save=False,
-                    agnostic_nms=True,
-                    persist=True,
-                    verbose=False,
-                    device=0 if use_gpu & torch.cuda.is_available() else 'cpu',
-                    classes=values['classes']
-                )[0].cpu().numpy()
-            elif isinstance(det_model, OCRer):
-                result = det_model.ocr(frame)
-            else:
-                result = None
-                logging.error('Result is None')
+        else:
+            for values in det_models.values():
+                det_model = values['model']
+                imgsz = (min(det_width * height // width, height), min(det_width, width))
 
-            logging.info('Inference ends')
+                logging.info('Inference begins')
 
-            for group in values['groups']:
-                results[group] = result
+                if isinstance(det_model, YOLO):
+                    result = det_model.track(
+                        source=frame,
+                        imgsz=imgsz,
+                        save=False,
+                        agnostic_nms=True,
+                        persist=True,
+                        verbose=False,
+                        device=0 if use_gpu & torch.cuda.is_available() else 'cpu',
+                        classes=values['classes']
+                    )[0].cpu().numpy()
+                elif isinstance(det_model, OCRer):
+                    result = det_model.ocr(
+                        img=frame,
+                        imgsz=imgsz
+                    )
+                else:
+                    result = None
+                    logging.error('Result is None')
+
+                logging.info('Inference ends')
+
+                for group in values['groups']:
+                    results[group] = result
 
         logging.info(f'Model cost: {time() - st1:.3f} s')
+
+        if warmup:
+            warmup = False
+            logging.info(f'Warmup finished')
+            continue
+
+        last_results = results
 
         stats_line = 1
         subscript_line = 1
@@ -243,8 +276,11 @@ def detect(
                 velocities = ret
 
             plotted_frame = detector.plot(plotted_frame, stats_line, subscript_line)
+            logging.info('Detector.plot done')
             stats_line, subscript_line = detector.update_line(stats_line, subscript_line)
+            logging.info('Detector.update_line done')
             corpus_infos = detector.output_corpus(output_dir, frame)
+            logging.info('Detector.output_corpus done')
 
             if not corpus_infos:
                 continue
@@ -295,7 +331,17 @@ def detect(
         logging.info(f'Total cost: {total_cost:.3f} s')
         logging.info('---------------------')
 
-        sleep(max(1 / fps - total_cost, 0))
+        if total_cost >= 1 / fps:
+            accrued_deviation += total_cost - 1 / fps
+
+        else:
+            if accrued_deviation > 0:
+                accrued_deviation -= 1 / fps - total_cost
+
+            else:
+                sleep(1 / fps - total_cost)
+
+    logging.info(f'Detection of {task_entry['url']} ended')
 
     cap_in.release()
 
