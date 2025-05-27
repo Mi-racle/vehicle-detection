@@ -124,35 +124,35 @@ def detect(
             update_task_status(task_entry['id'], -1)
             cap_in.release()
             return
-        elif 'parking' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 1:
             detectors[group_id] = ParkingDetector(fps=fps, **det_args)
-        elif 'wrongway' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 2:
             detectors[group_id] = WrongwayDetector(fps=fps, **det_args)
-        elif 'lanechange' in model_entry['model_name'].lower():
-            detectors[group_id] = LanechangeDetector(fps=fps, **det_args)
-        elif 'speeding' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 3:
             detectors[group_id] = SpeedingDetector(fps=fps, **det_args)
-        elif 'velocity' in model_entry['model_name'].lower():
-            detectors[group_id] = VelocityDetector(fps=fps, **det_args)
-        elif 'pim' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 4:
             detectors[group_id] = PimDetector(fps=fps, **det_args)
-        elif 'section' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 5:
+            detectors[group_id] = LanechangeDetector(fps=fps, **det_args)
+        elif model_entry['model_type'] == 6:
+            detectors[group_id] = VelocityDetector(fps=fps, **det_args)
+        elif model_entry['model_type'] == 7:
             detectors[group_id] = SectionDetector(fps=fps, **det_args)
-        elif 'volume' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 8:
             detectors[group_id] = VolumeDetector(fps=fps, **det_args)
-        elif 'density' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 9:
             detectors[group_id] = DensityDetector(fps=fps, **det_args)
-        elif 'queue' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 10:
             detectors[group_id] = QueueDetector(fps=fps, **det_args)
-        elif 'jam' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 11:
             detectors[group_id] = JamDetector(fps=fps, **det_args)
-        elif 'plate' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 12:
             detectors[group_id] = PlateDetector(fps=fps, **det_args)
-        elif 'triangle' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 13:
             detectors[group_id] = TriangleDetector(fps=fps, **det_args)
-        elif 'size' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 14:
             detectors[group_id] = SizeDetector(fps=fps, **det_args)
-        elif 'object' in model_entry['model_name'].lower():
+        elif model_entry['model_type'] == 15:
             detectors[group_id] = ObjectDetector(fps=fps, **det_args)
         else:
             logging.info('Unknown model found')
@@ -211,7 +211,7 @@ def detect(
 
         results = {}  # {group_id: result}
 
-        if online and accrued_deviation >= 1 / fps:
+        if online and accrued_deviation >= 1 / fps:  # TODO
             accrued_deviation -= 1 / fps
             results = last_results
 
