@@ -1,15 +1,15 @@
 # MySQL
-host: localhost
-port: 3306
-database: db_banma_traffic_analysis
-user: root
-password: "123456"
-autocommit: true
-
-# TiDB
-#host: 192.168.1.185
-#port: 4000
+#host: localhost
+#port: 3306
 #database: db_banma_traffic_analysis
 #user: root
-#password: "JL@8jsam"
+#password: "123456"
 #autocommit: true
+
+# TiDB
+host: 36.138.176.241
+port: 4000
+database: db_banma_traffic_analysis
+user: root
+password: "JL@8jsam"
+autocommit: true

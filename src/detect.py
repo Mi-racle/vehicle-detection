@@ -180,11 +180,23 @@ def detect(
 
     last_results = {}
     accrued_deviation = 0
+    cap_open_patience = 3
+    cap_read_patience = 3
 
     while True:
         if not cap_in.isOpened():
-            logging.info('Cap is closed')
-            break
+            cap_open_patience -= 1
+            logging.info(f'Open patience - 1')
+
+            if cap_open_patience < 0:
+                logging.info(f'Beyond open patience. Cap is closed. Break')
+                end_as_designed = True
+                break
+
+            else:
+                logging.info(f'Within open patience. Continue')
+                sleep(1 / fps)
+                continue
 
         if is_closed and is_closed():
             logging.info('Process is closed')
@@ -197,8 +209,18 @@ def detect(
         logging.info('Frame obtained')
 
         if not ret:
-            end_as_designed = True
-            break
+            cap_read_patience -= 1
+            logging.info(f'Read patience - 1')
+
+            if cap_read_patience < 0:
+                logging.info(f'Beyond read patience. Break')
+                end_as_designed = True
+                break
+
+            else:
+                logging.info(f'Within read patience. Continue')
+                sleep(1 / fps)
+                continue
 
         st1 = time()
 
@@ -211,7 +233,7 @@ def detect(
 
         results = {}  # {group_id: result}
 
-        if online and accrued_deviation >= 1 / fps:  # TODO
+        if False and online and accrued_deviation >= 1 / fps:  # TODO skip or not
             accrued_deviation -= 1 / fps
             results = last_results
 

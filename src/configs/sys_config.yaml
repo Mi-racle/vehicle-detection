@@ -7,8 +7,8 @@ weight_dir: weights
 video_dir: videos
 cache_minutes: 60
 det_width: 416
-online: false
-use_gpu: true
+online: true
+use_gpu: false
 warmup: true
-output_to_sql: false
+output_to_sql: true
 output_to_obs: false
