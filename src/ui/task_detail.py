@@ -218,8 +218,8 @@ class TaskDetailWidget(QWidget):
         dashed_line_group.setFixedSize(418, 1)
 
         # dashed_line_group BEGIN
-        self.__dashed_line = QWidget(time_group)
-        self.__dashed_line.setGeometry(16, 72, 386, 1)
+        self.__dashed_line = QWidget(dashed_line_group)
+        self.__dashed_line.setGeometry(16, 0, 386, 1)
         self.__dashed_line.setObjectName('dashedLine')
         self.__dashed_line.setStyleSheet(
             f'QWidget#{self.__dashed_line.objectName()} {{ {settings['dashed_line_ss']} }}')

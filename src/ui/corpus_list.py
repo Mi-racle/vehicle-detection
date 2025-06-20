@@ -58,7 +58,7 @@ class CorpusListWidget(QWidget):
 
             # corpus_info_group BEGIN
             self.__unselected_icon_pixmap = QPixmap(settings['scroll_item_icon'])
-            self.__selected_icon_pixmap = QPixmap(settings['scroll_item_icon'])
+            self.__selected_icon_pixmap = QPixmap(settings['scroll_item_selected_icon'])
             self.__icon_label = QLabel(corpus_info_group)
             self.__icon_label.setGeometry(0, 0, 20, 20)
             self.__icon_label.setPixmap(self.__unselected_icon_pixmap)
